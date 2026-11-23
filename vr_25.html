@@ -1,0 +1,341 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+  <meta name="referrer" content="strict-origin-when-cross-origin">
+  <style>
+    html, body {
+      margin: 0;
+      padding: 0;
+      width: 100%;
+      height: 100%;
+      background-color: #000;
+      overflow: hidden;
+    }
+    #yt-frame {
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      border: 0;
+    }
+    #drag-layer {
+      position: fixed;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 80px;
+      z-index: 50;
+      cursor: grab;
+      outline: none;
+      user-select: none;
+      -webkit-user-select: none;
+    }
+    #drag-layer:active {
+      cursor: grabbing;
+    }
+    #drag-layer.paused {
+      cursor: pointer;
+    }
+  </style>
+</head>
+<body>
+  <iframe
+    id="yt-frame"
+    src="https://www.youtube.com/embed/HgYWmgxCtrM?enablejsapi=1&autoplay=1&mute=1&fs=1&playsinline=1&rel=0"
+    allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; xr-spatial-tracking; fullscreen"
+    allowfullscreen>
+  </iframe>
+  <div id="drag-layer" tabindex="0"></div>
+
+  <script>
+    var frame = document.getElementById('yt-frame');
+    var dragLayer = document.getElementById('drag-layer');
+
+    var ytConnected = false;
+    var isPlaying = true;
+    var isMuted = true;
+    var autoUnmuteTried = false;
+
+    var isDragging = false;
+    var wasDragged = false;
+    var downX = 0, downY = 0;
+    var startX = 0, startY = 0;
+    var yaw = 0, pitch = 0, fov = 100;
+    var sphericalSynced = false;
+
+    function postToYT(payload) {
+      if (!frame || !frame.contentWindow) return;
+      try {
+        frame.contentWindow.postMessage(JSON.stringify(payload), '*');
+      } catch (e) {}
+    }
+
+    function sendCommand(func, args) {
+      postToYT({
+        event: 'command',
+        func: func,
+        args: args || [],
+        id: 1,
+        channel: 'widget'
+      });
+    }
+
+    function sendListening() {
+      postToYT({
+        event: 'listening',
+        id: 1,
+        channel: 'widget'
+      });
+    }
+
+    frame.addEventListener('load', sendListening);
+    var handshakeTimer = setInterval(function() {
+      if (ytConnected) {
+        clearInterval(handshakeTimer);
+        return;
+      }
+      sendListening();
+    }, 250);
+
+    function setPlayingState(playing) {
+      isPlaying = playing;
+      if (playing) {
+        dragLayer.classList.remove('paused');
+      } else {
+        dragLayer.classList.add('paused');
+      }
+    }
+
+    function onYTConnected() {
+      if (ytConnected) return;
+      ytConnected = true;
+      sendCommand('setSphericalProperties', [{ enableOrientationSensor: true }]);
+      sendCommand('playVideo', []);
+    }
+
+    window.addEventListener('message', function(e) {
+      if (!e.origin || e.origin.indexOf('youtube') === -1) return;
+      var data;
+      try {
+        data = typeof e.data === 'string' ? JSON.parse(e.data) : e.data;
+      } catch (err) {
+        return;
+      }
+      if (!data) return;
+
+      onYTConnected();
+
+      if (data.event === 'onStateChange' && typeof data.info === 'number') {
+        handlePlayerState(data.info);
+      }
+
+      if ((data.event === 'infoDelivery' || data.event === 'initialDelivery') && data.info) {
+        var info = data.info;
+        if (typeof info.playerState === 'number') {
+          handlePlayerState(info.playerState);
+        }
+        if (typeof info.muted === 'boolean') {
+          isMuted = info.muted;
+        }
+        if (info.sphericalProperties) {
+          var sp = info.sphericalProperties;
+          if (typeof sp.yaw === 'number') {
+            yaw = sp.yaw;
+            pitch = typeof sp.pitch === 'number' ? sp.pitch : pitch;
+            fov = typeof sp.fov === 'number' ? sp.fov : fov;
+            if (!sphericalSynced) {
+              sphericalSynced = true;
+              sendCommand('setSphericalProperties', [{ enableOrientationSensor: true }]);
+            }
+          }
+        }
+      }
+    });
+
+    function handlePlayerState(state) {
+      if (state === 1) { // PLAYING
+        setPlayingState(true);
+        if (!autoUnmuteTried) {
+          autoUnmuteTried = true;
+          forceUnmuteLoop();
+        }
+      } else if (state === 2) { // PAUSED
+        setPlayingState(false);
+      } else if (state === 5) { // CUED
+        sendCommand('playVideo', []);
+      }
+    }
+
+    function focusLayer() {
+      try {
+        window.focus();
+        dragLayer.focus({ preventScroll: true });
+      } catch (e) {}
+    }
+
+    // 0.5초 동안 0.1초 간격으로 음소거 해제와 재생을 강제 시도하는 루프 함수
+    function forceUnmuteLoop() {
+      var attempts = 0;
+      var maxAttempts = 5;
+      var interval = setInterval(function() {
+        sendCommand('unMute', []);
+        sendCommand('setVolume', [100]);
+        sendCommand('playVideo', []);
+        attempts++;
+        if (attempts >= maxAttempts) {
+          clearInterval(interval);
+        }
+      }, 100);
+    }
+
+    dragLayer.addEventListener('mouseenter', focusLayer);
+
+    function startDrag(x, y) {
+      focusLayer();
+      isDragging = true;
+      wasDragged = false;
+      downX = x;
+      downY = y;
+      startX = x;
+      startY = y;
+    }
+
+    function moveDrag(x, y) {
+      if (!isDragging) return;
+      if (Math.abs(x - downX) > 10 || Math.abs(y - downY) > 10) {
+        wasDragged = true;
+      }
+      var dx = x - startX;
+      var dy = y - startY;
+      startX = x;
+      startY = y;
+
+      if (!wasDragged) return;
+      yaw = (yaw - dx * 0.25 + 360) % 360;
+      pitch = Math.max(-90, Math.min(90, pitch + dy * 0.25));
+      sendCommand('setSphericalProperties', [{ yaw: yaw, pitch: pitch, fov: fov }]);
+    }
+
+    function endDrag() {
+      if (!isDragging) return;
+      isDragging = false;
+    }
+
+    dragLayer.addEventListener('mousedown', function(e) {
+      if (e.button !== 0) return;
+      startDrag(e.clientX, e.clientY);
+    });
+    window.addEventListener('mousemove', function(e) { moveDrag(e.clientX, e.clientY); });
+    window.addEventListener('mouseup', endDrag);
+
+    dragLayer.addEventListener('click', function() {
+      focusLayer();
+      if (wasDragged) {
+        wasDragged = false;
+        return;
+      }
+
+      // 클릭 시 강제 음소거 해제 루프 실행
+      forceUnmuteLoop();
+
+      if (isPlaying) {
+        sendCommand('pauseVideo', []);
+        setPlayingState(false);
+      } else {
+        sendCommand('playVideo', []);
+        setPlayingState(true);
+      }
+    });
+
+    dragLayer.addEventListener('touchstart', function(e) {
+      if (e.touches.length === 1) startDrag(e.touches[0].clientX, e.touches[0].clientY);
+    }, { passive: true });
+    dragLayer.addEventListener('touchmove', function(e) {
+      if (e.touches.length === 1) moveDrag(e.touches[0].clientX, e.touches[0].clientY);
+    }, { passive: true });
+    dragLayer.addEventListener('touchend', function(e) {
+      var dragged = wasDragged;
+      endDrag();
+      if (!dragged) {
+        if (e.cancelable) e.preventDefault();
+        
+        // 터치 종료 시 강제 음소거 해제 루프 실행
+        forceUnmuteLoop();
+
+        if (isPlaying) {
+          sendCommand('pauseVideo', []);
+          setPlayingState(false);
+        } else {
+          sendCommand('playVideo', []);
+          setPlayingState(true);
+        }
+      }
+    });
+
+    dragLayer.addEventListener('wheel', function(e) {
+      e.preventDefault();
+      focusLayer();
+      forceUnmuteLoop();
+      fov = Math.max(30, Math.min(120, fov + e.deltaY * 0.05));
+      sendCommand('setSphericalProperties', [{ yaw: yaw, pitch: pitch, fov: fov }]);
+    }, { passive: false });
+
+    var keyState = {};
+    var keyTimer = null;
+
+    function normalizeKey(e) {
+      if (e.code === 'Equal' || e.code === 'NumpadAdd') return '+';
+      if (e.code === 'Minus' || e.code === 'NumpadSubtract') return '-';
+      if (e.key === '=' || e.key === '+') return '+';
+      if (e.key === '_' || e.key === '-') return '-';
+      if (['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].indexOf(e.key) !== -1) return e.key;
+      return null;
+    }
+
+    function applyKeyMove(rotStep, zoomStep) {
+      if (keyState['ArrowLeft'])  yaw = (yaw + rotStep) % 360;
+      if (keyState['ArrowRight']) yaw = (yaw - rotStep + 360) % 360;
+      if (keyState['ArrowUp'])    pitch = Math.min(90, pitch + rotStep);
+      if (keyState['ArrowDown'])  pitch = Math.max(-90, pitch - rotStep);
+      if (keyState['+'])          fov = Math.max(30, fov - zoomStep);
+      if (keyState['-'])          fov = Math.min(120, fov + zoomStep);
+
+      sendCommand('setSphericalProperties', [{ yaw: yaw, pitch: pitch, fov: fov }]);
+    }
+
+    window.addEventListener('keydown', function(e) {
+      var k = normalizeKey(e);
+      if (!k) return;
+      e.preventDefault();
+      forceUnmuteLoop();
+
+      if (!keyState[k]) {
+        keyState[k] = true;
+        applyKeyMove(2, 2);
+      }
+      if (!keyTimer) {
+        keyTimer = setInterval(function() {
+          if (Object.keys(keyState).length === 0) {
+            clearInterval(keyTimer);
+            keyTimer = null;
+            return;
+          }
+          applyKeyMove(1.5, 1);
+        }, 20);
+      }
+    }, true);
+
+    window.addEventListener('keyup', function(e) {
+      var k = normalizeKey(e);
+      if (k) delete keyState[k];
+    }, true);
+
+    window.addEventListener('blur', function() {
+      keyState = {};
+    });
+  </script>
+</body>
+</html>
