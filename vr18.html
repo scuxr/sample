@@ -1,0 +1,250 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+  <meta name="referrer" content="strict-origin-when-cross-origin">
+  <style>
+    html, body {
+      margin: 0;
+      padding: 0;
+      width: 100%;
+      height: 100%;
+      background-color: #000;
+      overflow: hidden;
+    }
+    #player {
+      position: fixed;
+      inset: 0;
+      width: 100vw;
+      height: 100vh;
+      border: none;
+    }
+    #drag-layer {
+      position: fixed;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 80px;
+      z-index: 50;
+      cursor: grab;
+      display: none;
+    }
+    #drag-layer:active {
+      cursor: grabbing;
+    }
+    #status-badge {
+      position: fixed;
+      top: 16px;
+      left: 16px;
+      z-index: 9999;
+      padding: 10px 14px;
+      background: rgba(0, 0, 0, 0.85);
+      color: #ffd54f;
+      border: 1px solid rgba(255, 213, 79, 0.5);
+      border-radius: 8px;
+      font-size: 13px;
+      line-height: 1.5;
+      max-width: 75vw;
+      pointer-events: none;
+    }
+  </style>
+</head>
+<body>
+  <div id="status-badge">유튜브 API 불러오는 중...</div>
+  <div id="drag-layer"></div>
+  <div id="player"></div>
+
+  <script>
+    var badge = document.getElementById('status-badge');
+    var dragLayer = document.getElementById('drag-layer');
+    var player;
+    var playerCreated = false;
+    var isDragging = false;
+    var moved = false;
+    var startX = 0, startY = 0;
+    var yaw = 0, pitch = 0, fov = 100;
+
+    // 1. 실행 경로 확인 (file:// 로 열면 즉시 안내)
+    if (window.location.protocol === 'file:') {
+      badge.innerHTML = '⚠️ 현재 로컬 파일(file://)로 열려 있습니다.<br>로컬 서버(http://localhost)나 웹 호스팅에 올려야 영상이 나옵니다.';
+    }
+
+    function handleApiLoadError() {
+      badge.innerHTML = '❌ 유튜브 API 스크립트가 차단되었습니다.<br>브라우저 추적 방지(클린 웹)·광고 차단을 해제한 뒤 새로고침해 주세요.';
+    }
+
+    function initYouTubePlayer() {
+      if (playerCreated) return;
+      if (!window.YT || !window.YT.Player) return;
+      playerCreated = true;
+
+      badge.textContent = '플레이어 생성 중...';
+
+      var vars = {
+        'autoplay': 1,
+        'mute': 0,
+        'start': 0,
+        'fs': 1,
+        'playsinline': 1,
+        'rel': 0
+      };
+      if (window.location.protocol.indexOf('http') === 0) {
+        vars.origin = window.location.origin;
+      }
+
+      player = new YT.Player('player', {
+        height: '100%',
+        width: '100%',
+        videoId: 'HgYWmgxCtrM',
+        playerVars: vars,
+        events: {
+          'onReady': onPlayerReady,
+          'onStateChange': onPlayerStateChange,
+          'onError': onPlayerError
+        }
+      });
+    }
+
+    // 전역(window) 등록 + 주기적 감지로 콜백 누락 방지
+    window.onYouTubeIframeAPIReady = initYouTubePlayer;
+
+    var apiCheckCount = 0;
+    var apiWatcher = setInterval(function() {
+      apiCheckCount++;
+      if (window.YT && window.YT.Player) {
+        clearInterval(apiWatcher);
+        initYouTubePlayer();
+      } else if (apiCheckCount >= 25) {
+        clearInterval(apiWatcher);
+        badge.innerHTML = '⚠️ 유튜브 API 응답이 차단되었거나 지연되고 있습니다.<br>브라우저 주소창의 추적 방지/광고 차단을 끄고 새로고침해 주세요.';
+      }
+    }, 200);
+
+    function onPlayerReady(event) {
+      badge.textContent = '영상 준비 완료 · 재생 시작 중...';
+      event.target.unMute();
+      event.target.setVolume(100);
+      event.target.playVideo();
+
+      // 브라우저 정책으로 소리 있는 자동재생이 막혔을 때만 멈춤 방지용 안전장치 작동
+      setTimeout(function() {
+        if (!player || typeof player.getPlayerState !== 'function') return;
+        var state = player.getPlayerState();
+        if (state !== YT.PlayerState.PLAYING && state !== YT.PlayerState.BUFFERING) {
+          player.mute();
+          player.playVideo();
+        }
+      }, 500);
+    }
+
+    function onPlayerStateChange(event) {
+      if (event.data === YT.PlayerState.PLAYING) {
+        setTimeout(checkSphericalSupport, 600);
+      } else if (event.data === YT.PlayerState.PAUSED) {
+        badge.style.display = 'block';
+        badge.textContent = '일시정지 상태입니다. 화면을 클릭하면 재생됩니다.';
+      } else if (event.data === YT.PlayerState.BUFFERING) {
+        badge.textContent = '영상 버퍼링 중...';
+      }
+    }
+
+    function onPlayerError(event) {
+      var msg = {
+        2: '잘못된 영상 ID입니다.',
+        5: 'HTML5 플레이어 렌더링 오류입니다.',
+        100: '삭제되었거나 비공개 영상입니다.',
+        101: '게시자가 외부 사이트 재생(퍼가기)을 막은 영상입니다.',
+        150: '게시자가 외부 사이트 재생(퍼가기)을 막은 영상입니다.',
+        153: '출처(Referer/Origin) 설정 오류입니다. 웹 서버(http/https)에서 열어주세요.'
+      }[event.data] || '알 수 없는 재생 오류';
+      badge.style.display = 'block';
+      badge.innerHTML = '❌ 유튜브 오류 코드 ' + event.data + '<br>' + msg;
+    }
+
+    function checkSphericalSupport() {
+      if (!player || typeof player.getSphericalProperties !== 'function') {
+        badge.textContent = '⚠️ 360° API 미지원 브라우저입니다.';
+        return;
+      }
+      var props = player.getSphericalProperties();
+      if (props && Object.keys(props).length > 0) {
+        yaw = props.yaw || 0;
+        pitch = props.pitch || 0;
+        fov = props.fov || 100;
+        player.setSphericalProperties({ enableOrientationSensor: true });
+        dragLayer.style.display = 'block';
+        badge.textContent = '✅ 360° 활성 (마우스·터치 드래그 가능)';
+        setTimeout(function() { badge.style.display = 'none'; }, 3000);
+      } else {
+        dragLayer.style.display = 'none';
+        badge.innerHTML = '⚠️ 360° 구면 모드가 꺼져 있습니다.<br>(모바일 웹 브라우저이거나 크롬·웨일 하드웨어 가속이 꺼져 있으면 평면으로만 나옵니다)';
+      }
+    }
+
+    // 브라우저 정책으로 소리 출력이 보류된 경우 첫 클릭/터치 시 즉시 소리 켜기
+    function enableSound() {
+      if (player && typeof player.isMuted === 'function' && player.isMuted()) {
+        player.unMute();
+        player.setVolume(100);
+      }
+    }
+    window.addEventListener('mousedown', enableSound, true);
+    window.addEventListener('touchstart', enableSound, { passive: true, capture: true });
+
+    // 드래그 시점 제어 (vr4_2.html 원본)
+    function startDrag(x, y) {
+      isDragging = true;
+      moved = false;
+      startX = x;
+      startY = y;
+      var props = player.getSphericalProperties();
+      if (props && props.yaw !== undefined) {
+        yaw = props.yaw;
+        pitch = props.pitch;
+      }
+    }
+
+    function moveDrag(x, y) {
+      if (!isDragging) return;
+      var dx = x - startX;
+      var dy = y - startY;
+      if (Math.abs(dx) > 3 || Math.abs(dy) > 3) moved = true;
+      startX = x;
+      startY = y;
+
+      yaw = (yaw - dx * 0.25 + 360) % 360;
+      pitch = Math.max(-90, Math.min(90, pitch + dy * 0.25));
+      player.setSphericalProperties({ yaw: yaw, pitch: pitch, fov: fov });
+    }
+
+    function endDrag() {
+      if (!isDragging) return;
+      isDragging = false;
+      if (!moved && player) {
+        if (player.getPlayerState() === YT.PlayerState.PLAYING) player.pauseVideo();
+        else player.playVideo();
+      }
+    }
+
+    dragLayer.addEventListener('mousedown', function(e) { startDrag(e.clientX, e.clientY); });
+    window.addEventListener('mousemove', function(e) { moveDrag(e.clientX, e.clientY); });
+    window.addEventListener('mouseup', endDrag);
+
+    dragLayer.addEventListener('touchstart', function(e) {
+      if (e.touches.length === 1) startDrag(e.touches[0].clientX, e.touches[0].clientY);
+    }, { passive: true });
+    dragLayer.addEventListener('touchmove', function(e) {
+      if (e.touches.length === 1) moveDrag(e.touches[0].clientX, e.touches[0].clientY);
+    }, { passive: true });
+    dragLayer.addEventListener('touchend', endDrag);
+
+    dragLayer.addEventListener('wheel', function(e) {
+      e.preventDefault();
+      fov = Math.max(30, Math.min(120, fov + e.deltaY * 0.05));
+      player.setSphericalProperties({ fov: fov });
+    }, { passive: false });
+  </script>
+  <script src="https://www.youtube.com/iframe_api" onerror="handleApiLoadError()"></script>
+</body>
+</html>
