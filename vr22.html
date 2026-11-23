@@ -1,0 +1,255 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+  <meta name="referrer" content="strict-origin-when-cross-origin">
+  <style>
+    html, body {
+      margin: 0;
+      padding: 0;
+      width: 100%;
+      height: 100%;
+      background-color: #000;
+      overflow: hidden;
+    }
+    #player, #player iframe {
+      position: fixed;
+      inset: 0;
+      width: 100vw;
+      height: 100vh;
+      border: none;
+    }
+    #drag-layer {
+      position: fixed;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 80px;
+      z-index: 50;
+      cursor: grab;
+      outline: none;
+      user-select: none;
+      -webkit-user-select: none;
+    }
+    #drag-layer:active {
+      cursor: grabbing;
+    }
+    #drag-layer.is-paused {
+      cursor: pointer;
+    }
+    #error-badge {
+      display: none;
+      position: fixed;
+      top: 16px;
+      left: 16px;
+      z-index: 9999;
+      padding: 10px 14px;
+      background: rgba(0, 0, 0, 0.85);
+      color: #ffd54f;
+      border: 1px solid rgba(255, 213, 79, 0.5);
+      border-radius: 8px;
+      font-size: 13px;
+      line-height: 1.5;
+      max-width: 75vw;
+      pointer-events: none;
+    }
+  </style>
+</head>
+<body>
+  <div id="error-badge"></div>
+  <div id="drag-layer" tabindex="0"></div>
+  <div id="player"></div>
+
+  <script>
+    var VIDEO_ID = 'HgYWmgxCtrM';
+    var errorBadge = document.getElementById('error-badge');
+    var dragLayer = document.getElementById('drag-layer');
+
+    var player = null;
+    var fallbackIframe = null;
+    var mode = 'none'; // 'yt' | 'fallback'
+    var playerInitialized = false;
+
+    var isPlaying = false;
+    var isMuted = true;
+    var autoUnmuteTried = false;
+
+    var isDragging = false;
+    var wasDragged = false;
+    var downX = 0, downY = 0;
+    var startX = 0, startY = 0;
+    var yaw = 0, pitch = 0, fov = 100;
+    var sphericalSynced = false;
+
+    if (window.location.protocol === 'file:') {
+      errorBadge.style.display = 'block';
+      errorBadge.innerHTML = '⚠️ 로컬 파일(file://)로 열려 있습니다. 웹 서버(http/https)에서 열어주세요.';
+    }
+
+    // 1. YT.Player 공식 초기화
+    function initYTPlayer() {
+      if (playerInitialized) return;
+      if (!window.YT || typeof window.YT.Player !== 'function') return;
+      playerInitialized = true;
+      mode = 'yt';
+
+      var vars = {
+        autoplay: 1,
+        mute: 1,
+        start: 0,
+        fs: 1,
+        playsinline: 1,
+        rel: 0
+      };
+      if (window.location.protocol.indexOf('http') === 0) {
+        vars.origin = window.location.origin;
+      }
+
+      player = new YT.Player('player', {
+        height: '100%',
+        width: '100%',
+        videoId: VIDEO_ID,
+        playerVars: vars,
+        events: {
+          onReady: onYTReady,
+          onStateChange: onYTStateChange,
+          onError: onYTError
+        }
+      });
+    }
+
+    window.onYouTubeIframeAPIReady = initYTPlayer;
+
+    // 2. API 스크립트 비동기 로드 + 3초 내 미응답 시 직접 iframe 모드로 자동 전환
+    (function loadAPI() {
+      if (window.YT && typeof window.YT.Player === 'function') {
+        initYTPlayer();
+        return;
+      }
+      var tag = document.createElement('script');
+      tag.src = 'https://www.youtube.com/iframe_api';
+      tag.async = true;
+      tag.onerror = function() {
+        initFallbackIframe();
+      };
+      document.head.appendChild(tag);
+
+      var elapsed = 0;
+      var watcher = setInterval(function() {
+        elapsed += 150;
+        if (window.YT && typeof window.YT.ready === 'function') {
+          window.YT.ready(initYTPlayer);
+        }
+        if (window.YT && typeof window.YT.Player === 'function') {
+          clearInterval(watcher);
+          initYTPlayer();
+          return;
+        }
+        if (elapsed >= 3000) {
+          clearInterval(watcher);
+          if (!playerInitialized) {
+            initFallbackIframe();
+          }
+        }
+      }, 150);
+    })();
+
+    // 3. API 스크립트 지연/차단 시 직접 iframe + postMessage 제어 폴백
+    function initFallbackIframe() {
+      if (playerInitialized) return;
+      playerInitialized = true;
+      mode = 'fallback';
+
+      var originParam = '';
+      if (window.location.protocol.indexOf('http') === 0) {
+        originParam = '&origin=' + encodeURIComponent(window.location.origin);
+      }
+
+      var iframe = document.createElement('iframe');
+      iframe.src = 'https://www.youtube.com/embed/' + VIDEO_ID +
+        '?enablejsapi=1&autoplay=1&mute=1&start=0&fs=1&playsinline=1&rel=0' + originParam;
+      iframe.allow = 'accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; xr-spatial-tracking; fullscreen';
+      iframe.allowFullscreen = true;
+
+      var container = document.getElementById('player');
+      container.innerHTML = '';
+      container.appendChild(iframe);
+      fallbackIframe = iframe;
+      isPlaying = true;
+      isMuted = true;
+
+      var handshake = setInterval(function() {
+        if (!fallbackIframe || !fallbackIframe.contentWindow) return;
+        fallbackIframe.contentWindow.postMessage(JSON.stringify({
+          event: 'listening',
+          id: 1,
+          channel: 'widget'
+        }), '*');
+      }, 400);
+
+      setTimeout(function() { clearInterval(handshake); }, 8000);
+    }
+
+    window.addEventListener('message', function(e) {
+      if (mode !== 'fallback') return;
+      if (!e.origin || e.origin.indexOf('youtube') === -1) return;
+      var data;
+      try {
+        data = typeof e.data === 'string' ? JSON.parse(e.data) : e.data;
+      } catch (err) {
+        return;
+      }
+      if (!data || !data.info) return;
+
+      if (typeof data.info.playerState === 'number') {
+        updatePlayUI(data.info.playerState === 1);
+      }
+      if (typeof data.info.muted === 'boolean') {
+        isMuted = data.info.muted;
+      }
+      if (data.info.sphericalProperties && !sphericalSynced) {
+        var sp = data.info.sphericalProperties;
+        if (typeof sp.yaw === 'number') {
+          yaw = sp.yaw;
+          pitch = sp.pitch || 0;
+          fov = sp.fov || 100;
+          sphericalSynced = true;
+          sendFallbackCmd('setSphericalProperties', [{ enableOrientationSensor: true }]);
+        }
+      }
+    });
+
+    function sendFallbackCmd(func, args) {
+      if (!fallbackIframe || !fallbackIframe.contentWindow) return;
+      fallbackIframe.contentWindow.postMessage(JSON.stringify({
+        event: 'command',
+        func: func,
+        args: args || [],
+        id: 1,
+        channel: 'widget'
+      }), '*');
+    }
+
+    // 4. 통합 플레이어 제어 인터페이스
+    function updatePlayUI(playing) {
+      isPlaying = playing;
+      if (playing) {
+        dragLayer.classList.remove('is-paused');
+      } else {
+        dragLayer.classList.add('is-paused');
+      }
+    }
+
+    function apiPlay() {
+      if (mode === 'yt' && player && typeof player.playVideo === 'function') {
+        player.playVideo();
+      } else if (mode === 'fallback') {
+        sendFallbackCmd('playVideo', []);
+      }
+      updatePlayUI(true);
+    }
+
+    function apiPause() {
+      if (mode === 'yt' && player && typeof player.pauseVideo === 'function') {
+        player.
