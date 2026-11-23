@@ -1,0 +1,175 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+  <meta name="referrer" content="strict-origin-when-cross-origin">
+  <style>
+    html, body {
+      margin: 0;
+      padding: 0;
+      width: 100%;
+      height: 100%;
+      background-color: #000;
+      overflow: hidden;
+    }
+    #player {
+      position: fixed;
+      inset: 0;
+      width: 100vw;
+      height: 100vh;
+      border: none;
+    }
+    #drag-layer {
+      position: fixed;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 80px;
+      z-index: 50;
+      cursor: grab;
+    }
+    #drag-layer:active {
+      cursor: grabbing;
+    }
+    #status-badge {
+      position: fixed;
+      top: 16px;
+      left: 16px;
+      z-index: 9999;
+      padding: 10px 14px;
+      background: rgba(0, 0, 0, 0.85);
+      color: #ffd54f;
+      border: 1px solid rgba(255, 213, 79, 0.5);
+      border-radius: 8px;
+      font-size: 13px;
+      line-height: 1.5;
+      max-width: 75vw;
+      pointer-events: none;
+    }
+    #fs-btn {
+      position: fixed;
+      top: 16px;
+      right: 16px;
+      z-index: 9999;
+      padding: 10px 16px;
+      background: rgba(0, 0, 0, 0.85);
+      color: #fff;
+      border: 1px solid rgba(255, 255, 255, 0.4);
+      border-radius: 8px;
+      font-size: 14px;
+      cursor: pointer;
+    }
+  </style>
+</head>
+<body>
+  <div id="status-badge">영상 불러오는 중...</div>
+  <button id="fs-btn" onclick="enterFullscreenAndUnmute()">전체화면 + 소리 켜기</button>
+  <div id="drag-layer"></div>
+
+  <iframe
+    id="player"
+    allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; xr-spatial-tracking; fullscreen"
+    allowfullscreen>
+  </iframe>
+
+  <script>
+    var VIDEO_ID = 'HgYWmgxCtrM';
+    var badge = document.getElementById('status-badge');
+    var dragLayer = document.getElementById('drag-layer');
+    var iframe = document.getElementById('player');
+
+    var ytConnected = false;
+    var playerState = -1;
+    var sphericalConfirmed = false;
+    var isDragging = false;
+    var moved = false;
+    var startX = 0, startY = 0;
+    var yaw = 0, pitch = 0, fov = 100;
+
+    // 1. 실행 경로 확인 및 iframe 즉시 로드 (외부 API 스크립트 대기 없음)
+    var originQuery = '';
+    if (window.location.protocol.indexOf('http') === 0) {
+      originQuery = '&origin=' + encodeURIComponent(window.location.origin);
+    } else {
+      badge.innerHTML = '⚠️ 현재 로컬 파일(file://)로 열려 있습니다.<br>웹 서버(http/https) 환경에서 열어야 정상 재생됩니다.';
+    }
+
+    iframe.src = 'https://www.youtube.com/embed/' + VIDEO_ID +
+      '?enablejsapi=1&autoplay=1&mute=1&start=0&fs=1&playsinline=1&rel=0' + originQuery;
+
+    // 2. YouTube iframe과 직접 postMessage 채널 연결
+    function sendYTCommand(func, args) {
+      if (!iframe || !iframe.contentWindow) return;
+      iframe.contentWindow.postMessage(JSON.stringify({
+        event: 'command',
+        func: func,
+        args: args || [],
+        id: 1,
+        channel: 'widget'
+      }), '*');
+    }
+
+    function sendListeningHandshake() {
+      if (!iframe || !iframe.contentWindow) return;
+      iframe.contentWindow.postMessage(JSON.stringify({
+        event: 'listening',
+        id: 1,
+        channel: 'widget'
+      }), '*');
+    }
+
+    iframe.addEventListener('load', sendListeningHandshake);
+    var handshakeTimer = setInterval(function() {
+      if (ytConnected) {
+        clearInterval(handshakeTimer);
+        return;
+      }
+      sendListeningHandshake();
+    }, 400);
+
+    window.addEventListener('message', function(e) {
+      if (!e.origin || e.origin.indexOf('youtube') === -1) return;
+      var data;
+      try {
+        data = typeof e.data === 'string' ? JSON.parse(e.data) : e.data;
+      } catch (err) {
+        return;
+      }
+      if (!data) return;
+
+      ytConnected = true;
+
+      if (data.event === 'onReady') {
+        sendYTCommand('mute', []);
+        sendYTCommand('playVideo', []);
+      }
+
+      if (data.event === 'onError') {
+        var msg = {
+          2: '잘못된 영상 ID입니다.',
+          5: 'HTML5 플레이어 렌더링 오류입니다.',
+          100: '삭제되었거나 비공개 영상입니다.',
+          101: '게시자가 외부 사이트 재생(퍼가기)을 막은 영상입니다.',
+          150: '게시자가 외부 사이트 재생(퍼가기)을 막은 영상입니다.',
+          153: '출처(Origin) 설정 오류입니다. 웹 서버(http/https)에서 열어주세요.'
+        }[data.info] || '알 수 없는 재생 오류';
+        badge.style.display = 'block';
+        badge.innerHTML = '❌ 유튜브 오류 코드 ' + data.info + '<br>' + msg;
+      }
+
+      if (data.info) {
+        if (typeof data.info.playerState === 'number') {
+          playerState = data.info.playerState;
+          if (playerState === 1) {
+            onPlaybackStarted();
+          } else if (playerState === 2) {
+            badge.style.display = 'block';
+            badge.textContent = '일시정지 상태입니다. 화면을 클릭하면 재생됩니다.';
+          }
+        }
+
+        if (data.info.sphericalProperties) {
+          var sp = data.info.sphericalProperties;
+          if (!isDragging && Object.keys(keysPressed).length === 0) {
+            if (typeof sp.yaw === 'number')
