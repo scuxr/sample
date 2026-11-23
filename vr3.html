@@ -1,0 +1,187 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+  <meta name="referrer" content="strict-origin-when-cross-origin">
+  <style>
+    html, body {
+      margin: 0;
+      padding: 0;
+      width: 100%;
+      height: 100%;
+      background-color: #000;
+      overflow: hidden;
+      touch-action: none;
+    }
+    #player {
+      width: 100vw;
+      height: 100vh;
+      display: block;
+      border: none;
+    }
+    /* 하단 70px(유튜브 컨트롤 바)을 제외한 영역에서 드래그/터치 시점 제어 */
+    #drag-layer {
+      position: fixed;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 70px;
+      z-index: 50;
+      cursor: grab;
+      display: none;
+    }
+    #drag-layer:active {
+      cursor: grabbing;
+    }
+    #status-badge {
+      position: fixed;
+      top: 16px;
+      left: 16px;
+      z-index: 9999;
+      padding: 8px 12px;
+      background: rgba(0, 0, 0, 0.75);
+      color: #ffd54f;
+      border: 1px solid rgba(255, 213, 79, 0.4);
+      border-radius: 6px;
+      font-size: 13px;
+      max-width: 70vw;
+    }
+    #fs-btn {
+      position: fixed;
+      top: 16px;
+      right: 16px;
+      z-index: 9999;
+      padding: 10px 16px;
+      background: rgba(0, 0, 0, 0.75);
+      color: #fff;
+      border: 1px solid rgba(255, 255, 255, 0.4);
+      border-radius: 8px;
+      font-size: 14px;
+      cursor: pointer;
+    }
+  </style>
+</head>
+<body>
+  <div id="status-badge">360° 환경 확인 중...</div>
+  <button id="fs-btn" onclick="enterFullscreenAndUnmute()">전체화면 + 소리 켜기</button>
+  <div id="drag-layer"></div>
+  <div id="player"></div>
+
+  <script src="https://www.youtube.com/iframe_api"></script>
+  <script>
+    var player;
+    var isDragging = false;
+    var moved = false;
+    var startX = 0, startY = 0;
+    var yaw = 0, pitch = 0, fov = 100;
+
+    function onYouTubeIframeAPIReady() {
+      player = new YT.Player('player', {
+        height: '100%',
+        width: '100%',
+        videoId: 'HgYWmgxCtrM',
+        playerVars: {
+          'autoplay': 1,
+          'mute': 1,
+          'start': 0,
+          'fs': 1,
+          'playsinline': 1,
+          'rel': 0,
+          'origin': window.location.origin
+        },
+        events: {
+          'onReady': onPlayerReady,
+          'onStateChange': onPlayerStateChange
+        }
+      });
+    }
+
+    function onPlayerReady(event) {
+      var iframe = event.target.getIframe();
+      if (iframe) {
+        iframe.setAttribute('allow', 'accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; xr-spatial-tracking; fullscreen');
+      }
+      event.target.seekTo(0);
+      event.target.playVideo();
+    }
+
+    function onPlayerStateChange(event) {
+      if (event.data === YT.PlayerState.PLAYING) {
+        setTimeout(checkSphericalSupport, 500);
+      }
+    }
+
+    function checkSphericalSupport() {
+      var badge = document.getElementById('status-badge');
+      var dragLayer = document.getElementById('drag-layer');
+
+      if (!player || typeof player.getSphericalProperties !== 'function') {
+        badge.textContent = '360° API를 지원하지 않는 환경입니다.';
+        return;
+      }
+
+      var props = player.getSphericalProperties();
+      if (props && Object.keys(props).length > 0) {
+        yaw = props.yaw || 0;
+        pitch = props.pitch || 0;
+        fov = props.fov || 100;
+        player.setSphericalProperties({ enableOrientationSensor: true });
+        dragLayer.style.display = 'block';
+        badge.textContent = '360° 활성 (드래그·터치로 시점 회전 가능)';
+        setTimeout(function() { badge.style.display = 'none'; }, 3000);
+      } else {
+        dragLayer.style.display = 'none';
+        badge.textContent = '360° 모드 비활성: 일반 2D 영상이거나 모바일 웹/하드웨어 가속 제한 상태입니다.';
+      }
+    }
+
+    // 마우스 및 터치 드래그로 360도 시점 직접 회전
+    var dragLayer = document.getElementById('drag-layer');
+
+    function startDrag(x, y) {
+      isDragging = true;
+      moved = false;
+      startX = x;
+      startY = y;
+      var props = player.getSphericalProperties();
+      if (props && props.yaw !== undefined) {
+        yaw = props.yaw;
+        pitch = props.pitch;
+      }
+    }
+
+    function moveDrag(x, y) {
+      if (!isDragging) return;
+      var dx = x - startX;
+      var dy = y - startY;
+      if (Math.abs(dx) > 3 || Math.abs(dy) > 3) moved = true;
+
+      startX = x;
+      startY = y;
+
+      yaw = (yaw - dx * 0.25 + 360) % 360;
+      pitch = Math.max(-90, Math.min(90, pitch + dy * 0.25));
+
+      player.setSphericalProperties({
+        yaw: yaw,
+        pitch: pitch,
+        fov: fov
+      });
+    }
+
+    function endDrag() {
+      if (!isDragging) return;
+      isDragging = false;
+      // 드래그가 아닌 단순 클릭이면 재생/일시정지 토글
+      if (!moved && player) {
+        if (player.getPlayerState() === YT.PlayerState.PLAYING) {
+          player.pauseVideo();
+        } else {
+          player.playVideo();
+        }
+      }
+    }
+
+    dragLayer.addEventListener('mousedown', function(e) { startDrag(e.clientX, e.clientY); });
+    window.add
