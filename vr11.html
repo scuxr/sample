@@ -1,0 +1,283 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+  <meta name="referrer" content="strict-origin-when-cross-origin">
+  <style>
+    html, body {
+      margin: 0;
+      padding: 0;
+      width: 100%;
+      height: 100%;
+      background-color: #000;
+      overflow: hidden;
+    }
+    #player {
+      position: fixed;
+      inset: 0;
+      width: 100vw;
+      height: 100vh;
+      border: none;
+    }
+    #drag-layer {
+      position: fixed;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 80px;
+      z-index: 50;
+      cursor: grab;
+      display: none;
+    }
+    #drag-layer:active {
+      cursor: grabbing;
+    }
+    /* 실제 재생 오류가 발생할 때만 표시 */
+    #error-badge {
+      display: none;
+      position: fixed;
+      top: 16px;
+      left: 16px;
+      z-index: 9999;
+      padding: 10px 14px;
+      background: rgba(0, 0, 0, 0.85);
+      color: #ffd54f;
+      border: 1px solid rgba(255, 213, 79, 0.5);
+      border-radius: 8px;
+      font-size: 13px;
+      line-height: 1.5;
+      max-width: 75vw;
+      pointer-events: none;
+    }
+  </style>
+</head>
+<body>
+  <div id="error-badge"></div>
+  <div id="drag-layer"></div>
+  <div id="player"></div>
+
+  <script>
+    var errorBadge = document.getElementById('error-badge');
+    var dragLayer = document.getElementById('drag-layer');
+    var player;
+    var isDragging = false;
+    var moved = false;
+    var wasPlayingOnDown = false;
+    var startX = 0, startY = 0;
+    var yaw = 0, pitch = 0, fov = 100;
+
+    if (window.location.protocol === 'file:') {
+      errorBadge.style.display = 'block';
+      errorBadge.innerHTML = '⚠️ 로컬 파일(file://)로 열려 있습니다. 웹 서버(http/https)에서 열어주세요.';
+    }
+
+    var tag = document.createElement('script');
+    tag.src = 'https://www.youtube.com/iframe_api';
+    document.head.appendChild(tag);
+
+    function onYouTubeIframeAPIReady() {
+      var vars = {
+        'autoplay': 1,
+        'mute': 0,
+        'start': 0,
+        'fs': 1,
+        'playsinline': 1,
+        'rel': 0
+      };
+      if (window.location.protocol.indexOf('http') === 0) {
+        vars.origin = window.location.origin;
+      }
+
+      player = new YT.Player('player', {
+        height: '100%',
+        width: '100%',
+        videoId: 'HgYWmgxCtrM',
+        playerVars: vars,
+        events: {
+          'onReady': onPlayerReady,
+          'onStateChange': onPlayerStateChange,
+          'onError': onPlayerError
+        }
+      });
+    }
+
+    function onPlayerReady(event) {
+      event.target.unMute();
+      event.target.setVolume(100);
+      event.target.playVideo();
+    }
+
+    function onPlayerStateChange(event) {
+      if (event.data === YT.PlayerState.PLAYING) {
+        errorBadge.style.display = 'none';
+        setTimeout(checkSphericalSupport, 600);
+      } else if (event.data === YT.PlayerState.CUED) {
+        event.target.unMute();
+        event.target.setVolume(100);
+        event.target.playVideo();
+      }
+    }
+
+    function onPlayerError(event) {
+      var msg = {
+        2: '잘못된 영상 ID입니다.',
+        5: 'HTML5 플레이어 렌더링 오류입니다.',
+        100: '삭제되었거나 비공개 영상입니다.',
+        101: '게시자가 외부 사이트 재생(퍼가기)을 막은 영상입니다.',
+        150: '게시자가 외부 사이트 재생(퍼가기)을 막은 영상입니다.',
+        153: '출처(Origin) 설정 오류입니다. 웹 서버(http/https)에서 열어주세요.'
+      }[event.data] || '알 수 없는 재생 오류';
+      errorBadge.style.display = 'block';
+      errorBadge.innerHTML = '❌ 유튜브 오류 코드 ' + event.data + '<br>' + msg;
+    }
+
+    function checkSphericalSupport() {
+      if (!player || typeof player.getSphericalProperties !== 'function') return;
+      var props = player.getSphericalProperties();
+      if (props && Object.keys(props).length > 0) {
+        yaw = props.yaw || 0;
+        pitch = props.pitch || 0;
+        fov = props.fov || 100;
+        player.setSphericalProperties({ enableOrientationSensor: true });
+        dragLayer.style.display = 'block';
+      } else {
+        dragLayer.style.display = 'none';
+      }
+    }
+
+    // 브라우저 정책으로 자동재생이 대기 중일 경우 첫 클릭/터치/키 입력 시 즉시 소리+재생 실행
+    function ensurePlayWithSound() {
+      if (!player) return;
+      try {
+        if (typeof player.unMute === 'function') {
+          player.unMute();
+          player.setVolume(100);
+        }
+        if (typeof player.getPlayerState === 'function' && player.getPlayerState() !== YT.PlayerState.PLAYING) {
+          player.playVideo();
+        }
+      } catch (err) {}
+    }
+    document.addEventListener('touchstart', ensurePlayWithSound, { passive: true, capture: true });
+    document.addEventListener('keydown', ensurePlayWithSound, true);
+
+    // 드래그 시점 제어
+    function startDrag(x, y) {
+      isDragging = true;
+      moved = false;
+      startX = x;
+      startY = y;
+      wasPlayingOnDown = (player && typeof player.getPlayerState === 'function' && player.getPlayerState() === YT.PlayerState.PLAYING);
+      ensurePlayWithSound();
+
+      try {
+        var props = player.getSphericalProperties();
+        if (props && props.yaw !== undefined) {
+          yaw = props.yaw;
+          pitch = props.pitch;
+        }
+      } catch (err) {}
+    }
+
+    function moveDrag(x, y) {
+      if (!isDragging) return;
+      var dx = x - startX;
+      var dy = y - startY;
+      if (Math.abs(dx) > 3 || Math.abs(dy) > 3) moved = true;
+      startX = x;
+      startY = y;
+
+      yaw = (yaw - dx * 0.25 + 360) % 360;
+      pitch = Math.max(-90, Math.min(90, pitch + dy * 0.25));
+      try {
+        player.setSphericalProperties({ yaw: yaw, pitch: pitch, fov: fov });
+      } catch (err) {}
+    }
+
+    function endDrag() {
+      if (!isDragging) return;
+      isDragging = false;
+      if (!moved && player && typeof player.getPlayerState === 'function') {
+        if (wasPlayingOnDown) {
+          player.pauseVideo();
+        } else {
+          player.unMute();
+          player.setVolume(100);
+          player.playVideo();
+        }
+      }
+    }
+
+    dragLayer.addEventListener('mousedown', function(e) { startDrag(e.clientX, e.clientY); });
+    window.addEventListener('mousemove', function(e) { moveDrag(e.clientX, e.clientY); });
+    window.addEventListener('mouseup', endDrag);
+
+    dragLayer.addEventListener('touchstart', function(e) {
+      if (e.touches.length === 1) startDrag(e.touches[0].clientX, e.touches[0].clientY);
+    }, { passive: true });
+    dragLayer.addEventListener('touchmove', function(e) {
+      if (e.touches.length === 1) moveDrag(e.touches[0].clientX, e.touches[0].clientY);
+    }, { passive: true });
+    dragLayer.addEventListener('touchend', endDrag);
+
+    // 화면 더블클릭 시 모니터 전체화면(F11) 전환/해제
+    dragLayer.addEventListener('dblclick', function() {
+      if (!document.fullscreenElement && !document.webkitFullscreenElement) {
+        var elem = document.documentElement;
+        if (elem.requestFullscreen) elem.requestFullscreen();
+        else if (elem.webkitRequestFullscreen) elem.webkitRequestFullscreen();
+      } else {
+        if (document.exitFullscreen) document.exitFullscreen();
+        else if (document.webkitExitFullscreen) document.webkitExitFullscreen();
+      }
+    });
+
+    dragLayer.addEventListener('wheel', function(e) {
+      e.preventDefault();
+      fov = Math.max(30, Math.min(120, fov + e.deltaY * 0.05));
+      try {
+        player.setSphericalProperties({ fov: fov });
+      } catch (err) {}
+    }, { passive: false });
+
+    // 키보드 방향키(상하좌우) 및 +/- (확대/축소) 제어
+    var keyState = {};
+    var keyTimer = null;
+
+    function handleKeyMove(rotStep, zoomStep) {
+      if (!player || typeof player.getSphericalProperties !== 'function') return;
+      try {
+        var props = player.getSphericalProperties();
+        if (!props || props.yaw === undefined) return;
+
+        yaw = props.yaw;
+        pitch = props.pitch;
+        fov = props.fov || fov;
+
+        if (keyState['ArrowLeft'])  yaw = (yaw + rotStep) % 360;
+        if (keyState['ArrowRight']) yaw = (yaw - rotStep + 360) % 360;
+        if (keyState['ArrowUp'])    pitch = Math.min(90, pitch + rotStep);
+        if (keyState['ArrowDown'])  pitch = Math.max(-90, pitch - rotStep);
+        if (keyState['+'])          fov = Math.max(30, fov - zoomStep);
+        if (keyState['-'])          fov = Math.min(120, fov + zoomStep);
+
+        player.setSphericalProperties({ yaw: yaw, pitch: pitch, fov: fov });
+      } catch (err) {}
+    }
+
+    document.addEventListener('keydown', function(e) {
+      var k = e.key;
+      if (e.code === 'Equal' || e.code === 'NumpadAdd') k = '+';
+      if (e.code === 'Minus' || e.code === 'NumpadSubtract') k = '-';
+
+      if (['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', '+', '-'].indexOf(k) === -1) return;
+      e.preventDefault();
+
+      if (!keyState[k]) {
+        keyState[k] = true;
+        handleKeyMove(2, 2);
+      }
+      if (!keyTimer) {
+        keyTimer = setInterval(function() {
+          if (Object
