@@ -1,0 +1,375 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<script>
+/* =====================================================================
+   ▶ 여기에 재생할 360° 영상 주소를 넣으세요.
+     - 같은 폴더의 파일:   "course01_360.mp4"
+     - 하위 폴더의 파일:   "videos/course01_360.mp4"
+     - 인터넷 주소:        "https://cdn.example.ac.kr/vr/course01_360.mp4"
+   비워두면("") 파일 열기 화면이 나옵니다.
+   ===================================================================== */
+const VIDEO_SRC = "https://dmp4.iscu.ac.kr/iscu/cdmsTemp/Contents/vr/comu_01.mp4";
+</script>
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>SCU AID 360° Player</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+KR:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+:root{
+  --bg:#eef1f5; --text:#1e2633; --muted:#5d6878; --line:#cfd6e0;
+  --player:#1c2431; --chrome:rgba(22,29,41,.82); --chrome-text:#f3f6fa;
+  --accent:#f2b33d; --accent-ink:#2a1d00;
+  box-sizing:border-box;
+  padding-top:env(safe-area-inset-top,0px);
+  padding-bottom:env(safe-area-inset-bottom,0px);
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){ --bg:#151b25; --text:#e7ecf3; --muted:#9aa6b6; --line:#2c3646; }
+}
+:root[data-theme="dark"]{ --bg:#151b25; --text:#e7ecf3; --muted:#9aa6b6; --line:#2c3646; }
+*,*::before,*::after{box-sizing:inherit}
+[hidden]{display:none!important}
+html{scroll-padding-top:env(safe-area-inset-top,0px)}
+body{margin:0;background:var(--bg);color:var(--text);
+  font-family:"IBM Plex Sans KR","Apple SD Gothic Neo","Malgun Gothic",system-ui,sans-serif;line-height:1.6}
+main{max-width:1080px;margin:0 auto;padding:24px 16px 40px}
+h1{font-size:1.35rem;font-weight:600;margin:0 0 4px;letter-spacing:-.01em}
+.sub{margin:0 0 18px;color:var(--muted);font-size:.95rem;max-width:68ch}
+
+/* ---------- player ---------- */
+.player{position:relative;width:100%;aspect-ratio:16/9;background:var(--player);
+  border-radius:10px;overflow:hidden;user-select:none;-webkit-user-select:none;touch-action:none;outline:none}
+.player:focus-visible{box-shadow:0 0 0 3px var(--accent)}
+.player canvas{display:block;width:100%;height:100%;cursor:grab}
+.player.dragging canvas{cursor:grabbing}
+.player.pseudo-fs{position:fixed;inset:0;z-index:999;aspect-ratio:auto;border-radius:0;height:100%}
+.player:fullscreen{border-radius:0;aspect-ratio:auto}
+body:has(.player.pseudo-fs){overflow:hidden}
+
+.empty{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;
+  gap:12px;color:var(--chrome-text);text-align:center;padding:20px}
+.empty.drop{background:rgba(242,179,61,.12);outline:2px dashed var(--accent);outline-offset:-14px}
+.empty .logo{display:block;width:68px;height:auto;margin-bottom:6px}
+.empty p{margin:0;max-width:40ch;opacity:.85;font-size:.95rem}
+.btn-primary{font:inherit;font-weight:600;background:var(--accent);color:var(--accent-ink);border:0;
+  padding:10px 18px;border-radius:999px;cursor:pointer}
+.btn-primary:focus-visible{outline:3px solid #fff;outline-offset:2px}
+
+.hint{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);pointer-events:none;
+  background:var(--chrome);color:var(--chrome-text);padding:10px 16px;border-radius:999px;font-size:.9rem;
+  display:flex;gap:10px;align-items:center;transition:opacity .6s}
+.hint.hide{opacity:0}
+
+.compass{position:absolute;top:12px;right:12px;width:52px;height:52px;border-radius:50%;
+  background:var(--chrome);display:grid;place-items:center;cursor:pointer;border:0;padding:0}
+.compass svg{width:40px;height:40px}
+.compass:focus-visible{outline:3px solid var(--accent)}
+
+.bar{position:absolute;left:0;right:0;bottom:0;padding:10px 12px calc(10px + env(safe-area-inset-bottom,0px));
+  background:linear-gradient(transparent,rgba(10,14,20,.85));color:var(--chrome-text);
+  display:flex;flex-direction:column;gap:6px;transition:opacity .3s}
+.player.idle .bar{opacity:0}
+.row{display:flex;align-items:center;gap:6px}
+.spacer{flex:1}
+.ic{background:none;border:0;color:inherit;width:38px;height:38px;border-radius:8px;cursor:pointer;
+  display:grid;place-items:center;padding:0}
+.ic:hover{background:rgba(255,255,255,.12)}
+.ic:focus-visible{outline:2px solid var(--accent)}
+.ic[aria-pressed="true"]{color:var(--accent)}
+.ic svg{width:22px;height:22px;fill:currentColor}
+.time{font-size:.85rem;font-variant-numeric:tabular-nums;opacity:.9;padding:0 4px;white-space:nowrap}
+input[type=range]{-webkit-appearance:none;appearance:none;background:transparent;cursor:pointer;margin:0}
+input[type=range]::-webkit-slider-runnable-track{height:4px;border-radius:2px;background:linear-gradient(to right,var(--accent) var(--p,0%),rgba(255,255,255,.3) var(--p,0%))}
+input[type=range]::-moz-range-track{height:4px;border-radius:2px;background:rgba(255,255,255,.3)}
+input[type=range]::-moz-range-progress{height:4px;border-radius:2px;background:var(--accent)}
+input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:14px;height:14px;border-radius:50%;background:#fff;margin-top:-5px}
+input[type=range]::-moz-range-thumb{width:14px;height:14px;border:0;border-radius:50%;background:#fff}
+input[type=range]:focus-visible{outline:2px solid var(--accent);outline-offset:4px}
+#seek{width:100%}
+#vol{width:80px}
+@media (max-width:520px){ #vol{display:none} .ic{width:34px;height:34px} }
+
+.notes{margin-top:22px;display:grid;gap:4px;font-size:.92rem;color:var(--muted);max-width:72ch}
+.notes b{color:var(--text);font-weight:600}
+kbd{font-family:inherit;font-size:.85em;border:1px solid var(--line);border-radius:4px;padding:0 5px}
+.err{color:#ffb4a8}
+@media (prefers-reduced-motion:reduce){.hint,.bar{transition:none}}
+</style>
+</head>
+<body>
+<main>
+  <h1>SCU AID 360° Player</h1>
+  <p class="sub">360° 영상을 열면 드래그·키보드·휠·자이로로 시점을 돌려 볼 수 있습니다.</p>
+
+  <div class="player idle pseudo-fs" id="player" tabindex="0" aria-label="360도 영상 플레이어. 방향키로 시점 이동">
+    <div class="empty" id="empty">
+      <img class="logo" src="data:image/png;base64,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" alt="" width="68" height="57">
+      <button class="btn-primary" id="pick">360 영상 파일 열기</button>
+      <p id="emptyMsg">MP4·WebM 파일을 여기로 끌어다 놓아도 됩니다. 2:1 비율 영상이어야 왜곡 없이 보입니다.</p>
+      <input type="file" id="file" accept="video/*" hidden>
+    </div>
+
+    <div class="hint hide" id="hint" aria-hidden="true">
+      <svg width="22" height="22" viewBox="0 0 24 24" fill="currentColor"><path d="M9 11V5.5a1.5 1.5 0 0 1 3 0V10h.5V8.5a1.5 1.5 0 0 1 3 0V10h.5v-.5a1.5 1.5 0 0 1 3 0V15a6 6 0 0 1-6 6h-1a6 6 0 0 1-4.6-2.2L4 15.2a1.4 1.4 0 0 1 2.1-1.8L8 15V11z"/></svg>
+      드래그해서 둘러보세요
+    </div>
+
+    <button class="compass" id="compass" title="정면으로 되돌리기" aria-label="시점을 정면으로 되돌리기" hidden>
+      <svg viewBox="0 0 40 40" aria-hidden="true">
+        <circle cx="20" cy="20" r="17" fill="none" stroke="rgba(255,255,255,.35)" stroke-width="1.5"/>
+        <path id="fov" d="M20 20 L20 3 A17 17 0 0 1 32 8 Z" fill="rgba(242,179,61,.75)"/>
+        <circle cx="20" cy="20" r="2.5" fill="#fff"/>
+      </svg>
+    </button>
+
+    <div class="bar" id="bar" hidden>
+      <input type="range" id="seek" min="0" max="1000" value="0" step="1" aria-label="재생 위치">
+      <div class="row">
+        <button class="ic" id="play" aria-label="재생"><svg viewBox="0 0 24 24"><path id="playPath" d="M8 5v14l11-7z"/></svg></button>
+        <button class="ic" id="mute" aria-label="음소거"><svg viewBox="0 0 24 24"><path id="mutePath" d="M3 9v6h4l5 5V4L7 9H3zm13.5 3A4.5 4.5 0 0 0 14 8v8a4.5 4.5 0 0 0 2.5-4zM14 3.2v2.1a7 7 0 0 1 0 13.4v2.1a9 9 0 0 0 0-17.6z"/></svg></button>
+        <input type="range" id="vol" min="0" max="1" step="0.05" value="1" aria-label="볼륨">
+        <span class="time" id="time">0:00 / 0:00</span>
+        <span class="spacer"></span>
+        <button class="ic" id="gyro" aria-pressed="false" aria-label="기기 기울여 보기" title="기기 기울여 보기" hidden><svg viewBox="0 0 24 24"><path d="M17 1H7a2 2 0 0 0-2 2v18a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V3a2 2 0 0 0-2-2zm0 18H7V5h10v14z"/></svg></button>
+        <button class="ic" id="open" aria-label="다른 영상 열기" title="다른 영상 열기"><svg viewBox="0 0 24 24"><path d="M10 4H4a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-8l-2-2z"/></svg></button>
+        <button class="ic" id="fs" aria-label="전체화면" title="전체화면"><svg viewBox="0 0 24 24"><path id="fsPath" d="M7 14H5v5h5v-2H7v-3zm-2-4h2V7h3V5H5v5zm12 7h-3v2h5v-5h-2v3zM14 5v2h3v3h2V5h-5z"/></svg></button>
+      </div>
+    </div>
+  </div>
+
+  <div class="notes">
+    <span><b>조작</b> 드래그로 회전, 휠·핀치 또는 <kbd>+</kbd><kbd>-</kbd>로 확대/축소, <kbd>←</kbd><kbd>→</kbd><kbd>↑</kbd><kbd>↓</kbd> 시점 이동, <kbd>Space</kbd> 재생/일시정지, <kbd>F</kbd> 전체화면 켜기/끄기, <kbd>Esc</kbd> 전체화면 끝내기, <kbd>R</kbd> 정면 복귀, <kbd>M</kbd> 음소거</span>
+  </div>
+</main>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script>
+(function(){
+  const $ = id => document.getElementById(id);
+  const player=$('player'), empty=$('empty'), bar=$('bar'), hint=$('hint'), compass=$('compass');
+
+  // ---------- video element ----------
+  const video=document.createElement('video');
+  video.crossOrigin='anonymous';
+  video.playsInline=true; video.setAttribute('playsinline',''); video.setAttribute('webkit-playsinline','');
+  video.preload='auto'; video.loop=false;
+
+  // ---------- three.js scene ----------
+  const renderer=new THREE.WebGLRenderer({antialias:false});
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio,2));
+  player.insertBefore(renderer.domElement, player.firstChild);
+  const scene=new THREE.Scene();
+  const camera=new THREE.PerspectiveCamera(75,16/9,1,1100);
+  const geo=new THREE.SphereGeometry(500,64,40); geo.scale(-1,1,1);   // 구 안쪽에서 보이도록 뒤집기
+  const tex=new THREE.VideoTexture(video);
+  tex.minFilter=THREE.LinearFilter; tex.magFilter=THREE.LinearFilter; tex.encoding=THREE.sRGBEncoding;
+  renderer.outputEncoding=THREE.sRGBEncoding;
+  const mesh=new THREE.Mesh(geo,new THREE.MeshBasicMaterial({map:tex}));
+  scene.add(mesh);
+
+  // ---------- view state ----------
+  let lon=0, lat=0, fov=75, vLon=0, vLat=0;
+  let gyroOn=false, gyroData=null, gyroYawOffset=0;
+  const MIN_FOV=35, MAX_FOV=100;
+
+  function resize(){
+    const r=player.getBoundingClientRect();
+    if(!r.width||!r.height) return;
+    renderer.setSize(r.width,r.height,false);
+    camera.aspect=r.width/r.height; camera.updateProjectionMatrix();
+  }
+  new ResizeObserver(resize).observe(player);
+
+  // ---------- pointer / touch drag ----------
+  const pts=new Map(); let down=null, pinch=null, lastMove=0;
+  player.addEventListener('pointerdown',e=>{
+    if(e.target.closest('.bar,.compass,.empty')) return;
+    player.setPointerCapture(e.pointerId);
+    pts.set(e.pointerId,{x:e.clientX,y:e.clientY});
+    if(pts.size===1){ down={x:e.clientX,y:e.clientY,lon:gyroOn?gyroYawOffset:lon,lat,t:performance.now()}; vLon=vLat=0; player.classList.add('dragging'); }
+    if(pts.size===2){ const [a,b]=[...pts.values()]; pinch={d:Math.hypot(a.x-b.x,a.y-b.y),fov}; down=null; }
+    hideHint(); wake();
+  });
+  player.addEventListener('pointermove',e=>{
+    wake();
+    if(!pts.has(e.pointerId)) return;
+    const prev=pts.get(e.pointerId); pts.set(e.pointerId,{x:e.clientX,y:e.clientY});
+    if(pinch && pts.size===2){
+      const [a,b]=[...pts.values()]; const d=Math.hypot(a.x-b.x,a.y-b.y);
+      fov=clamp(pinch.fov*pinch.d/d,MIN_FOV,MAX_FOV); return;
+    }
+    if(!down) return;
+    const k=0.12*fov/75;  // 확대 시 더 미세하게
+    const dx=e.clientX-down.x, dy=e.clientY-down.y;
+    if(gyroOn){ gyroYawOffset=down.lon - dx*k; }
+    else { lon=down.lon - dx*k; lat=clamp(down.lat + dy*k,-85,85); }
+    const now=performance.now(), dt=Math.max(now-lastMove,1); lastMove=now;
+    vLon=-(e.clientX-prev.x)*k/dt*16; vLat=(e.clientY-prev.y)*k/dt*16;
+  });
+  const end=e=>{
+    pts.delete(e.pointerId);
+    if(pts.size<2) pinch=null;
+    if(pts.size===0){ down=null; player.classList.remove('dragging'); if(performance.now()-lastMove>80){vLon=vLat=0;} }
+  };
+  player.addEventListener('pointerup',end); player.addEventListener('pointercancel',end);
+
+  player.addEventListener('wheel',e=>{
+    if(!video.src) return;
+    e.preventDefault(); fov=clamp(fov+e.deltaY*0.05,MIN_FOV,MAX_FOV);
+  },{passive:false});
+
+  // ---------- keyboard ----------
+  player.addEventListener('keydown',e=>{
+    if(!video.src) return;
+    const step=e.shiftKey?20:6;
+    switch(e.key){
+      case 'ArrowLeft': lon-=step; break;
+      case 'ArrowRight': lon+=step; break;
+      case 'ArrowUp': lat=clamp(lat+step,-85,85); break;
+      case 'ArrowDown': lat=clamp(lat-step,-85,85); break;
+      case ' ': case 'k': togglePlay(); break;
+      case 'f': case 'F': toggleFs(); setTimeout(updFs,50); break;
+      case 'r': case 'R': resetView(); break;
+      case 'm': case 'M': video.muted=!video.muted; break;
+      case '+': case '=': fov=clamp(fov-5,MIN_FOV,MAX_FOV); break;
+      case '-': fov=clamp(fov+5,MIN_FOV,MAX_FOV); break;
+      default: return;
+    }
+    e.preventDefault(); hideHint(); wake();
+  });
+
+  // ---------- gyroscope ----------
+  const gyroBtn=$('gyro');
+  if('DeviceOrientationEvent' in window && matchMedia('(pointer:coarse)').matches) gyroBtn.hidden=false;
+  gyroBtn.addEventListener('click',async()=>{
+    if(!gyroOn && typeof DeviceOrientationEvent.requestPermission==='function'){
+      try{ if(await DeviceOrientationEvent.requestPermission()!=='granted') return; }catch(_){ return; }
+    }
+    gyroOn=!gyroOn; gyroBtn.setAttribute('aria-pressed',gyroOn);
+    gyroYawOffset=0;
+    if(gyroOn) window.addEventListener('deviceorientation',onOrient); else { window.removeEventListener('deviceorientation',onOrient); gyroData=null; }
+  });
+  function onOrient(e){ if(e.alpha!=null) gyroData={a:e.alpha,b:e.beta,g:e.gamma}; }
+  const zee=new THREE.Vector3(0,0,1), eul=new THREE.Euler(), q0=new THREE.Quaternion(),
+        q1=new THREE.Quaternion(-Math.sqrt(.5),0,0,Math.sqrt(.5)), qYaw=new THREE.Quaternion(), yAxis=new THREE.Vector3(0,1,0);
+  function screenAngle(){ return ((screen.orientation&&screen.orientation.angle)||window.orientation||0)*Math.PI/180; }
+
+  // ---------- render loop ----------
+  const target=new THREE.Vector3(), dir=new THREE.Vector3(), fovPath=$('fov');
+  function frame(){
+    requestAnimationFrame(frame);
+    if(!down && !gyroOn && (Math.abs(vLon)>.01||Math.abs(vLat)>.01)){
+      lon+=vLon; lat=clamp(lat+vLat,-85,85); vLon*=.92; vLat*=.92;
+    }
+    camera.fov+= (fov-camera.fov)*.25; camera.updateProjectionMatrix();
+    if(gyroOn && gyroData){
+      const d=THREE.MathUtils.degToRad;
+      eul.set(d(gyroData.b),d(gyroData.a),-d(gyroData.g),'YXZ');
+      camera.quaternion.setFromEuler(eul).multiply(q1).multiply(q0.setFromAxisAngle(zee,-screenAngle()));
+      qYaw.setFromAxisAngle(yAxis,THREE.MathUtils.degToRad(-gyroYawOffset));
+      camera.quaternion.premultiply(qYaw);
+    } else {
+      const phi=THREE.MathUtils.degToRad(90-lat), th=THREE.MathUtils.degToRad(lon);
+      target.set(500*Math.sin(phi)*Math.cos(th),500*Math.cos(phi),500*Math.sin(phi)*Math.sin(th));
+      camera.lookAt(target);
+    }
+    // compass: heading relative to the video's front (lon=0 → -x... front is +x at lon 0)
+    camera.getWorldDirection(dir);
+    const heading=Math.atan2(dir.z,dir.x); // 0 = 정면
+    const half=THREE.MathUtils.degToRad(camera.fov*camera.aspect/2);
+    const a0=heading-half, a1=heading+half, R=17;
+    const p=a=>[20+R*Math.sin(a),20-R*Math.cos(a)];
+    const [x0,y0]=p(a0),[x1,y1]=p(a1);
+    fovPath.setAttribute('d',`M20 20 L${x0.toFixed(1)} ${y0.toFixed(1)} A${R} ${R} 0 ${(a1-a0)>Math.PI?1:0} 1 ${x1.toFixed(1)} ${y1.toFixed(1)} Z`);
+    renderer.render(scene,camera);
+  }
+  resize(); frame();
+
+  // ---------- loading ----------
+  function load(src,name){
+    video.src=src; video.load();
+    empty.hidden=true; bar.hidden=false; compass.hidden=false;
+    resetView(); hint.classList.remove('hide');
+    setTimeout(hideHint,4000);
+    video.play().catch(()=>{}); player.focus({preventScroll:true});
+  }
+  video.addEventListener('error',()=>{
+    empty.hidden=false; bar.hidden=true; compass.hidden=true;
+    $('emptyMsg').innerHTML='<span class="err">이 영상을 열 수 없습니다.</span> 브라우저가 지원하는 코덱(H.264 MP4 권장)인지, 다른 서버의 영상이라면 CORS가 허용되어 있는지 확인하세요.';
+  });
+  const fileIn=$('file');
+  $('pick').onclick=$('open').onclick=()=>fileIn.click();
+  fileIn.onchange=()=>{ const f=fileIn.files[0]; if(f){ if(video.src.startsWith('blob:')) URL.revokeObjectURL(video.src); load(URL.createObjectURL(f),f.name);} fileIn.value=''; };
+  ['dragenter','dragover'].forEach(t=>player.addEventListener(t,e=>{e.preventDefault(); empty.classList.add('drop');}));
+  ['dragleave','drop'].forEach(t=>player.addEventListener(t,e=>{e.preventDefault(); empty.classList.remove('drop');}));
+  player.addEventListener('drop',e=>{ const f=e.dataTransfer.files[0]; if(f && f.type.startsWith('video')) load(URL.createObjectURL(f),f.name); });
+  // 주소의 ?src= 값이 있으면 그것을, 없으면 맨 위 VIDEO_SRC를 불러옴
+  const qs=new URLSearchParams(location.search).get('src') || (typeof VIDEO_SRC==='string' ? VIDEO_SRC.trim() : '');
+  if(qs) load(qs);
+
+  // ---------- controls ----------
+  const seek=$('seek'), vol=$('vol'), time=$('time');
+  function togglePlay(){ video.paused?video.play():video.pause(); }
+  $('play').onclick=togglePlay;
+  const PLAY='M8 5v14l11-7z', PAUSE='M6 5h4v14H6zm8 0h4v14h-4z';
+  video.addEventListener('play',()=>{ $('playPath').setAttribute('d',PAUSE); $('play').setAttribute('aria-label','일시정지'); });
+  video.addEventListener('pause',()=>{ $('playPath').setAttribute('d',PLAY); $('play').setAttribute('aria-label','재생'); wake(); });
+  let seeking=false;
+  seek.addEventListener('input',()=>{ seeking=true; setP(seek,seek.value/10); if(video.duration) video.currentTime=seek.value/1000*video.duration; });
+  seek.addEventListener('change',()=>seeking=false);
+  video.addEventListener('timeupdate',()=>{
+    if(!video.duration) return;
+    if(!seeking){ seek.value=video.currentTime/video.duration*1000; setP(seek,seek.value/10); }
+    time.textContent=fmt(video.currentTime)+' / '+fmt(video.duration);
+  });
+  video.addEventListener('loadedmetadata',()=>{ time.textContent='0:00 / '+fmt(video.duration); });
+  const VOL='M3 9v6h4l5 5V4L7 9H3zm13.5 3A4.5 4.5 0 0 0 14 8v8a4.5 4.5 0 0 0 2.5-4zM14 3.2v2.1a7 7 0 0 1 0 13.4v2.1a9 9 0 0 0 0-17.6z',
+        MUTED='M16.5 12A4.5 4.5 0 0 0 14 8v2.2l2.4 2.4c.1-.2.1-.4.1-.6zM19 12c0 .9-.2 1.8-.5 2.6l1.5 1.5A9 9 0 0 0 14 3.2v2.1A7 7 0 0 1 19 12zM4.3 3 3 4.3 7.7 9H3v6h4l5 5v-6.7l4.3 4.3c-.7.5-1.4.9-2.3 1.2v2.1a9 9 0 0 0 3.7-1.8l2 2 1.3-1.3L4.3 3zM12 4 9.9 6.1 12 8.2V4z';
+  $('mute').onclick=()=>{ video.muted=!video.muted; };
+  vol.addEventListener('input',()=>{ video.volume=+vol.value; video.muted=vol.value==0; });
+  video.addEventListener('volumechange',()=>{
+    const m=video.muted||video.volume===0;
+    $('mutePath').setAttribute('d',m?MUTED:VOL); $('mute').setAttribute('aria-label',m?'음소거 해제':'음소거');
+    setP(vol,(video.muted?0:video.volume)*100);
+  });
+  setP(vol,100);
+
+  function resetView(){ lon=0; lat=0; fov=75; vLon=vLat=0; gyroYawOffset=0; }
+  compass.onclick=resetView;
+
+  function toggleFs(){
+    const fsEl=document.fullscreenElement||document.webkitFullscreenElement;
+    if(fsEl){ (document.exitFullscreen||document.webkitExitFullscreen).call(document); return; }
+    if(player.classList.contains('pseudo-fs')){ player.classList.remove('pseudo-fs'); return; }
+    const req=player.requestFullscreen||player.webkitRequestFullscreen;
+    if(req) req.call(player).catch(()=>player.classList.add('pseudo-fs'));
+    else player.classList.add('pseudo-fs');   // iPhone Safari 대체
+  }
+  $('fs').onclick=()=>{ toggleFs(); setTimeout(updFs,50); };
+  const FS_ON='M7 14H5v5h5v-2H7v-3zm-2-4h2V7h3V5H5v5zm12 7h-3v2h5v-5h-2v3zM14 5v2h3v3h2V5h-5z',
+        FS_OFF='M5 16h3v3h2v-5H5v2zm3-8H5v2h5V5H8v3zm6 11h2v-3h3v-2h-5v5zm2-11V5h-2v5h5V8h-3z';
+  function updFs(){
+    const on=!!(document.fullscreenElement||document.webkitFullscreenElement)||player.classList.contains('pseudo-fs');
+    $('fsPath').setAttribute('d',on?FS_OFF:FS_ON);
+    $('fs').setAttribute('aria-label',on?'전체화면 끝내기':'전체화면'); $('fs').title=on?'전체화면 끝내기':'전체화면';
+  }
+  document.addEventListener('fullscreenchange',updFs); document.addEventListener('webkitfullscreenchange',updFs);
+  document.addEventListener('keydown',e=>{
+    if(e.key==='Escape' && player.classList.contains('pseudo-fs')){ player.classList.remove('pseudo-fs'); updFs(); }
+  });
+  updFs();
+
+  // auto-hide controls
+  let idleT; function wake(){ player.classList.remove('idle'); clearTimeout(idleT); idleT=setTimeout(()=>{ if(!video.paused) player.classList.add('idle'); },2500); }
+  function hideHint(){ hint.classList.add('hide'); }
+
+  function clamp(v,a,b){ return Math.max(a,Math.min(b,v)); }
+  function fmt(s){ s=Math.floor(s||0); const h=Math.floor(s/3600), m=Math.floor(s%3600/60), x=String(s%60).padStart(2,'0'); return h?`${h}:${String(m).padStart(2,'0')}:${x}`:`${m}:${x}`; }
+  function setP(el,pct){ el.style.setProperty('--p',pct+'%'); }
+})();
+</script>
+</body>
+</html>
