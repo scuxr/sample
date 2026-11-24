@@ -1,0 +1,157 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="referrer" content="strict-origin-when-cross-origin">
+<title>VR 360° 플레이어 v30</title>
+<style>
+  html,body{width:100%;height:100%;margin:0;background:#000;overflow:hidden}
+  #player{position:absolute;inset:0;width:100%;height:100%}
+  /* Keep YouTube's bottom transport/volume controls accessible. */
+  #look-area{position:absolute;left:0;right:0;top:0;bottom:76px;z-index:2;
+    touch-action:none;cursor:grab;outline:0;background:transparent;user-select:none;display:none}
+  #look-area.dragging{cursor:grabbing}
+  #hint{position:absolute;top:12px;left:50%;transform:translateX(-50%);z-index:3;
+    padding:7px 11px;border-radius:7px;background:rgba(0,0,0,.56);color:#fff;
+    font:12px/1.4 sans-serif;white-space:nowrap;pointer-events:none;opacity:.85}
+  #status{position:absolute;bottom:82px;left:12px;z-index:3;max-width:90%;
+    color:#fff;background:rgba(0,0,0,.65);border-radius:5px;padding:5px 8px;
+    font:12px/1.4 sans-serif;pointer-events:none;display:none}
+  @media(max-height:200px){#look-area{bottom:48px}#hint{display:none}}
+</style>
+</head>
+<body>
+<div id="player"></div>
+<div id="look-area" tabindex="0" aria-label="360도 영상 시점: 마우스 드래그, 휠, 방향키, 더하기 및 빼기 키"></div>
+<div id="hint">클릭: 재생/일시정지 · 드래그: 시점 이동 · 휠: 확대/축소 · 방향키 / + −</div>
+<div id="status" role="status"></div>
+<script>
+(function(){
+  'use strict';
+  var VIDEO_ID='ZZrohzCM-P0';
+  var player=null, ready=false, spherical=false;
+  var view={yaw:0,pitch:0,fov:100};
+  var layer=document.getElementById('look-area');
+  var hint=document.getElementById('hint');
+  var status=document.getElementById('status');
+  var pointerId=null, px=0, py=0, downX=0, downY=0, changed=false;
+  var hasStarted=false;
+  var keys=new Set(), raf=0, lastTime=0;
+  var lastSync=0;
+  function message(s){status.textContent=s;status.style.display='block';}
+  function showLook(yes){layer.style.display=yes?'block':'none';if(yes)layer.focus({preventScroll:true});}
+  function clamp(v,a,b){return Math.min(b,Math.max(a,v));}
+  function syncView(){
+    if(!ready || !player || typeof player.getSphericalProperties!=='function') return;
+    try{
+      var p=player.getSphericalProperties();
+      if(p && typeof p.yaw==='number' && typeof p.pitch==='number' && typeof p.fov==='number'){
+        view.yaw=p.yaw;view.pitch=p.pitch;view.fov=p.fov;spherical=true;
+        status.style.display='none';
+      }
+    }catch(e){}
+  }
+  function applyView(){
+    if(!ready || !player || typeof player.setSphericalProperties!=='function') return;
+    try{
+      player.setSphericalProperties({yaw:view.yaw,pitch:view.pitch,fov:view.fov,
+        enableOrientationSensor:false});
+    }catch(e){message('360° 시점 명령을 전달하지 못했습니다.');}
+  }
+  function turn(dx,dy){
+    view.yaw=((view.yaw-dx*.24)%360+360)%360;
+    view.pitch=clamp(view.pitch+dy*.24,-90,90);
+    applyView();
+  }
+  function zoom(delta){
+    view.fov=clamp(view.fov+delta,30,120);
+    applyView();
+  }
+  function prepare(){
+    layer.focus({preventScroll:true});
+    if(Date.now()-lastSync>1500){syncView();lastSync=Date.now();}
+  }
+  layer.addEventListener('pointerdown',function(e){
+    if(e.button!==0 && e.pointerType==='mouse')return;
+    prepare();pointerId=e.pointerId;px=downX=e.clientX;py=downY=e.clientY;changed=false;
+    layer.classList.add('dragging');
+    try{layer.setPointerCapture(e.pointerId)}catch(ex){}
+    e.preventDefault();
+  });
+  layer.addEventListener('pointermove',function(e){
+    if(pointerId!==e.pointerId)return;
+    var dx=e.clientX-px,dy=e.clientY-py;
+    px=e.clientX;py=e.clientY;
+    if(!changed && Math.hypot(e.clientX-downX,e.clientY-downY)>=7)changed=true;
+    if(changed && (dx || dy))turn(dx,dy);
+  });
+  function stop(e){
+    if(pointerId!==e.pointerId)return;
+    var tap=!changed && e.type==='pointerup';
+    pointerId=null;layer.classList.remove('dragging');
+    try{layer.releasePointerCapture(e.pointerId)}catch(ex){}
+    if(tap && ready && player){
+      try{
+        var state=player.getPlayerState();
+        if(state===YT.PlayerState.PLAYING || state===YT.PlayerState.BUFFERING){player.pauseVideo();}
+        else{player.playVideo();}
+      }catch(err){message('재생/일시정지 명령을 전달하지 못했습니다.')}
+    }
+  }
+  layer.addEventListener('pointerup',stop);
+  layer.addEventListener('pointercancel',stop);
+  layer.addEventListener('wheel',function(e){
+    e.preventDefault();prepare();zoom(e.deltaY*.045);
+  },{passive:false});
+  function normalizeKey(e){
+    if(e.key==='ArrowLeft'||e.key==='ArrowRight'||e.key==='ArrowUp'||e.key==='ArrowDown')return e.key;
+    if(e.code==='NumpadAdd'||e.key==='+'||e.key==='='||e.key==='Add')return '+';
+    if(e.code==='NumpadSubtract'||e.key==='-'||e.key==='_'||e.key==='Subtract')return '-';
+    return null;
+  }
+  function tick(t){
+    if(!keys.size){raf=0;lastTime=0;return;}
+    var step=lastTime?Math.min((t-lastTime)/16.7,3):1;
+    lastTime=t;
+    var dx=0,dy=0;
+    if(keys.has('ArrowLeft'))dx-=5*step;
+    if(keys.has('ArrowRight'))dx+=5*step;
+    if(keys.has('ArrowUp'))dy+=5*step;
+    if(keys.has('ArrowDown'))dy-=5*step;
+    if(dx||dy)turn(dx,dy);
+    if(keys.has('+'))zoom(-1.3*step);
+    if(keys.has('-'))zoom(1.3*step);
+    raf=requestAnimationFrame(tick);
+  }
+  window.addEventListener('keydown',function(e){
+    var k=normalizeKey(e);if(!k)return;
+    e.preventDefault();
+    if(!keys.has(k)){keys.add(k);if(!raf)raf=requestAnimationFrame(tick)}
+  },true);
+  window.addEventListener('keyup',function(e){var k=normalizeKey(e);if(k){keys.delete(k);e.preventDefault()}},true);
+  window.addEventListener('blur',function(){keys.clear();});
+  // No automatic sound unmute or playback requests: preserve working click-to-play audio.
+  window.onYouTubeIframeAPIReady=function(){
+    player=new YT.Player('player',{
+      width:'100%',height:'100%',videoId:VIDEO_ID,
+      playerVars:{autoplay:0,controls:1,playsinline:1,rel:0,fs:1},
+      events:{
+        onReady:function(){ready=true;setTimeout(syncView,300);},
+        onStateChange:function(e){
+          if(e.data===1){hasStarted=true;syncView();showLook(true);}
+          else if(e.data===2){showLook(hasStarted);syncView();}
+          else if(e.data===0 || e.data===5){showLook(false);syncView();}
+        },
+        onError:function(e){message('유튜브 플레이어 오류 코드: '+e.data);}
+      }
+    });
+  };
+  var api=document.createElement('script');
+  api.src='https://www.youtube.com/iframe_api';
+  api.onerror=function(){message('유튜브 API를 불러오지 못했습니다.');};
+  document.head.appendChild(api);
+})();
+</script>
+</body>
+</html>
