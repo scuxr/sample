@@ -1,0 +1,230 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>발표 자료</title>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/static/pretendard.min.css">
+<style>
+  :root{
+    --bg:#f4f5f7; --panel:#ffffff; --ink:#1b1f24; --sub:#6b7380; --line:#e3e6ea;
+    --accent:#1f5fbf; --accent-soft:#e8f0fc; --side-w:216px; --top-h:64px;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  html,body{height:100%}
+  body{font-family:Pretendard,"Noto Sans CJK KR","Malgun Gothic",sans-serif;background:var(--bg);color:var(--ink);overflow:hidden}
+
+  /* ── 상단 바 ── */
+  header{position:fixed;top:0;left:0;right:0;height:var(--top-h);background:var(--panel);
+    border-bottom:1px solid var(--line);display:flex;align-items:center;gap:16px;padding:0 20px;z-index:10}
+  .toggle{width:36px;height:36px;border:1px solid var(--line);border-radius:8px;background:#fff;cursor:pointer;font-size:18px;color:var(--sub)}
+  .toggle:hover{background:var(--bg)}
+  .brand{display:flex;flex-direction:column;line-height:1.25}
+  .brand .deck{font-size:12px;color:var(--sub);letter-spacing:.02em}
+  .brand .now{font-size:19px;font-weight:700}
+  .spacer{flex:1}
+  .counter{font-size:13px;color:var(--sub);font-variant-numeric:tabular-nums}
+  .nav-btn{height:36px;padding:0 14px;border:1px solid var(--line);border-radius:8px;background:#fff;cursor:pointer;font:inherit;font-size:14px}
+  .nav-btn:hover:not(:disabled){border-color:var(--accent);color:var(--accent)}
+  .nav-btn:disabled{opacity:.4;cursor:default}
+  .progress{position:absolute;left:0;bottom:-1px;height:3px;background:var(--accent);transition:width .3s}
+
+  /* ── 좌측 목차 ── */
+  aside{position:fixed;top:var(--top-h);left:0;bottom:0;width:var(--side-w);background:var(--panel);
+    border-right:1px solid var(--line);overflow-y:auto;padding:14px 8px;transition:transform .25s}
+  body.collapsed aside{transform:translateX(-100%)}
+  .sec{margin-bottom:2px}
+  .sec-head{display:flex;align-items:center;gap:8px;width:100%;text-align:left;border:0;background:none;cursor:pointer;
+    font:inherit;font-size:14px;font-weight:600;color:var(--ink);padding:10px 8px;border-radius:8px}
+  .sec-head:hover{background:var(--bg)}
+  .sec-head .no{flex:none;width:20px;height:20px;border-radius:5px;background:var(--bg);color:var(--sub);
+    font-size:11px;display:flex;align-items:center;justify-content:center;font-variant-numeric:tabular-nums}
+  .sec-head .name{flex:1;line-height:1.3}
+  .sec-head .chev{flex:none;font-size:10px;color:var(--sub);transition:transform .2s}
+  .sec.open .sec-head .no{background:var(--accent);color:#fff}
+  .sec.open .sec-head .chev{transform:rotate(90deg)}
+  .sec-body{display:grid;grid-template-rows:0fr;transition:grid-template-rows .25s}
+  .sec.open .sec-body{grid-template-rows:1fr}
+  .sec-body > div{overflow:hidden}
+  .sec.home{margin-bottom:8px;padding-bottom:8px;border-bottom:1px solid var(--line)}
+  .sec.home .sec-head .no{font-size:13px}
+  .item{display:block;width:100%;text-align:left;border:0;background:none;cursor:pointer;font:inherit;font-size:13px;
+    color:var(--sub);padding:7px 8px 7px 36px;border-radius:6px;position:relative}
+  .item:hover{background:var(--bg);color:var(--ink)}
+  .item::before{content:"";position:absolute;left:18px;top:0;bottom:0;width:1px;background:var(--line)}
+  .item.active{background:var(--accent-soft);color:var(--accent);font-weight:600}
+  .item.active::before{background:var(--accent);width:2px}
+  .sec.open .sec-body > div{padding-bottom:4px}
+
+  /* ── 본문 ── */
+  main{position:fixed;top:var(--top-h);left:var(--side-w);right:0;bottom:0;padding:20px;transition:left .25s}
+  body.collapsed main{left:0}
+  .frame-wrap{width:100%;height:100%;background:#fff;border:1px solid var(--line);border-radius:12px;overflow:hidden;
+    box-shadow:0 1px 3px rgba(0,0,0,.04)}
+  iframe{width:100%;height:100%;border:0;display:block}
+
+  /* 발표 모드(F): 목차·여백 숨김 */
+  body.present aside{transform:translateX(-100%)}
+  body.present main{left:0;padding:0}
+  body.present .frame-wrap{border:0;border-radius:0}
+</style>
+</head>
+<body>
+
+<header>
+  <button class="toggle" id="toggle" title="목차 열기/닫기 (T)">☰</button>
+  <div class="brand">
+    <span class="deck" id="deckTitle"></span>
+    <span class="now" id="nowTitle"></span>
+  </div>
+  <div class="spacer"></div>
+  <span class="counter" id="counter"></span>
+  <button class="nav-btn" id="prev">◀ 이전</button>
+  <button class="nav-btn" id="next">다음 ▶</button>
+  <button class="nav-btn" id="present" title="발표 모드 (F)">발표 모드</button>
+  <div class="progress" id="progress"></div>
+</header>
+
+<aside id="toc"></aside>
+
+<main><div class="frame-wrap"><iframe id="view" title="발표 페이지"></iframe></div></main>
+
+<script>
+/* ======================================================
+   ▼ 여기만 고치면 됩니다
+   - src : 같은 폴더(또는 하위 폴더)의 html 파일 경로
+   - src 가 없으면 아래 데모 화면이 표시됩니다
+   ====================================================== */
+const DECK_TITLE = "모듈별 XR 콘텐츠 소개";
+const SECTIONS = [
+  { name: "홈", home: true, pages: [
+    { title: "모듈별 XR 콘텐츠 소개", src: "" /* 직접 만든 표지를 쓰려면 경로 입력 */ },
+  ]},
+  { name: "현장몰입 모듈", pages: [
+    { title: "모듈 구현원리",   src: "01.ballet-mirror/ballet-mirror-light.html" },
+    { title: "모듈 적용 강의",  src: "lectures/m1_lectures.html" },
+  ]},
+  { name: "공간확장 모듈", pages: [
+    { title: "모듈 구현원리", src: "02.walking-replay/walking-replay-light.html" }, { title: "모듈 적용 강의", src: "lectures/m2_lectures.html" },
+  ]},
+  { name: "공간탐색 모듈", pages: [
+    { title: "모듈 구현원리", src: "03.greenhouse-360/greenhouse-360-light.html" }, { title: "모듈 적용 강의", src: "lectures/m3_lectures.html" },
+  ]},
+  { name: "경험확장 모듈", pages: [
+    { title: "모듈 구현원리", src: "04.experience-360/experience-360-light.html" }, { title: "모듈 적용 강의", src: "lectures/m4_lectures.html" },
+  ]},
+  { name: "다각도 관찰(VX) 모듈", pages: [
+    { title: "모듈 구현원리", src: "05.makeup-array/makeup-array-light.html" }, { title: "모듈 적용 강의", src: "lectures/m5_lectures.html" },
+  ]},
+  { name: "뷰 선택 모듈", pages: [
+    { title: "모듈 구현원리", src: "06.golf-swing/golf-swing-light.html" }, { title: "모듈 적용 강의", src: "lectures/m6_lectures.html" },
+  ]},
+  { name: "인터랙션 모듈", pages: [
+    { title: "모듈 구현원리", src: "07.zoom-greenhouse/zoom-greenhouse-light.html" }, { title: "모듈 적용 강의", src: "lectures/m7_lectures.html" },
+  ]},
+];
+/* ====================================================== */
+
+const flat = [];
+SECTIONS.forEach((s, si) => s.pages.forEach(p => flat.push({...p, section:s.name, si})));
+let cur = 0;
+
+const $ = id => document.getElementById(id);
+$("deckTitle").textContent = DECK_TITLE;
+document.title = DECK_TITLE;
+
+// 목차 생성
+let n = 0;
+let mod = 0;
+$("toc").innerHTML = SECTIONS.map((s, si) => s.home ? `
+  <div class="sec home" data-si="${si}">
+    <button class="sec-head" data-home="${n++}"><span class="no">⌂</span><span class="name">${s.name}</span></button>
+  </div>` : `
+  <div class="sec" data-si="${si}">
+    <button class="sec-head" data-si="${si}"><span class="no">${++mod}</span><span class="name">${s.name}</span><span class="chev">▶</span></button>
+    <div class="sec-body"><div>
+    ${s.pages.map(p => { const i = n++; return `<button class="item" data-i="${i}">${p.title}</button>`; }).join("")}
+    </div></div>
+  </div>`).join("");
+
+// 아코디언: 한 모듈만 펼치기
+function openSection(si){
+  document.querySelectorAll(".sec").forEach(el => el.classList.toggle("open", +el.dataset.si === si));
+}
+$("toc").addEventListener("click", e => {
+  const b = e.target.closest(".item"); if (b) return go(+b.dataset.i);
+  const h = e.target.closest(".sec-head");
+  if (h && h.dataset.home) return go(+h.dataset.home);
+  if (h) { const el = h.parentElement; el.classList.contains("open") ? el.classList.remove("open") : openSection(+h.dataset.si); }
+});
+
+// 하위 페이지: src가 비어 있으면 빈 화면
+function demo(p, i){
+  if (SECTIONS[p.si].home) return homeDemo();
+  return `<!DOCTYPE html><html><body style="margin:0;background:#fff"></body></html>`;
+}
+
+// 홈(표지) 화면: 모듈 카드를 누르면 해당 모듈로 이동
+function homeDemo(){
+  const cs=getComputedStyle(document.documentElement), v=n=>cs.getPropertyValue(n).trim();
+  const ac=v("--accent")||"#1f5fbf", soft=v("--accent-soft")||"#e8f0fc";
+  const mods = SECTIONS.map((s, si) => ({s, si})).filter(x => !x.s.home);
+  const cards = mods.map((x, k) => `<button onclick="parent.postMessage({goSection:${x.si}},'*')">
+    <b>${String(k+1).padStart(2,"0")}</b><span>${x.s.name}</span></button>`).join("");
+  return `<!DOCTYPE html><html><head><meta charset="utf-8">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/static/pretendard.min.css">
+  <style>*{box-sizing:border-box}body{margin:0;height:100vh;display:flex;flex-direction:column;align-items:center;justify-content:center;
+  font-family:Pretendard,"Noto Sans CJK KR","Malgun Gothic",sans-serif;background:linear-gradient(160deg,#ffffff 40%,${soft});color:#1b1f24}
+  .k{font-size:12px;font-weight:700;letter-spacing:.14em;color:${ac}}
+  h1{font-size:42px;font-weight:800;letter-spacing:-.02em;margin:10px 0 8px}
+  p{font-size:15px;color:#6b7380;margin:0 0 36px}
+  .grid{display:grid;grid-template-columns:repeat(4,160px);gap:10px;justify-content:center}
+  button{display:flex;flex-direction:column;align-items:flex-start;gap:6px;padding:13px 14px 15px;border:1px solid #e3e6ea;
+  border-radius:12px;background:#fff;cursor:pointer;font:inherit;text-align:left;transition:.15s}
+  button:hover{border-color:${ac};transform:translateY(-2px);box-shadow:0 8px 20px rgba(0,0,0,.06)}
+  button b{font-size:11px;color:${ac}}button span{font-size:14px;font-weight:700;color:#1b1f24}</style></head>
+  <body><div class="k">AID PROJECT · XR CONTENTS</div><h1>모듈별 XR 콘텐츠 소개</h1>
+  <p>7개 XR 모듈의 구현원리 · 적용 강의</p><div class="grid">${cards}</div></body></html>`;
+}
+window.addEventListener("message", e => {
+  if (e.data && typeof e.data.goSection === "number") go(flat.findIndex(p => p.si === e.data.goSection));
+});
+
+function go(i){
+  if (i < 0 || i >= flat.length) return;
+  cur = i; const p = flat[i]; const v = $("view");
+  if (p.src) { v.removeAttribute("srcdoc"); v.src = p.src; }
+  else { v.removeAttribute("src"); v.srcdoc = demo(p, i); }
+  $("nowTitle").textContent = SECTIONS[p.si].home ? p.title : `${p.section} · ${p.title}`;
+  $("deckTitle").textContent = SECTIONS[p.si].home ? "HOME" : DECK_TITLE;
+  openSection(p.si);
+  $("counter").textContent = `${i+1} / ${flat.length}`;
+  $("progress").style.width = `${(i+1)/flat.length*100}%`;
+  $("prev").disabled = i === 0; $("next").disabled = i === flat.length-1;
+  document.querySelectorAll(".item").forEach(b => b.classList.toggle("active", +b.dataset.i === i));
+  document.querySelectorAll(".sec.home").forEach(el => el.classList.toggle("open", SECTIONS[p.si].home === true));
+  try { history.replaceState(null, "", "#" + (i+1)); } catch (e) {}
+}
+
+$("prev").onclick = () => go(cur-1);
+$("next").onclick = () => go(cur+1);
+$("toggle").onclick = () => document.body.classList.toggle("collapsed");
+$("present").onclick = () => togglePresent();
+function togglePresent(){
+  document.body.classList.toggle("present");
+  try {
+    if (document.body.classList.contains("present")) document.documentElement.requestFullscreen?.()?.catch(()=>{});
+    else if (document.fullscreenElement) document.exitFullscreen();
+  } catch (e) {}
+}
+document.addEventListener("keydown", e => {
+  if (["ArrowRight","PageDown"].includes(e.key)) go(cur+1);
+  if (["ArrowLeft","PageUp"].includes(e.key)) go(cur-1);
+  if (e.key === "t" || e.key === "T") document.body.classList.toggle("collapsed");
+  if (e.key === "f" || e.key === "F") togglePresent();
+});
+
+go(Math.max(0, (parseInt(location.hash.slice(1)) || 1) - 1));
+</script>
+</body>
+</html>

@@ -1,0 +1,123 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>모듈 적용 강의</title>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/static/pretendard.min.css">
+<style>
+  :root{
+    --ink:#1b1f24; --sub:#6b7380; --line:#e3e6ea; --bg:#ffffff;
+    --accent:#1f5fbf; --accent-soft:#e8f0fc;
+    --y1:#5b6b80; --y1-soft:#eef1f5;   /* 1차년도 */
+    --y2:#1f5fbf; --y2-soft:#e8f0fc;   /* 2차년도 */
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  html,body{height:100%}
+  body{font-family:Pretendard,"Noto Sans CJK KR","Malgun Gothic",sans-serif;color:var(--ink);background:var(--bg);
+    padding:clamp(20px,3.2vh,36px) clamp(24px,3vw,48px);display:flex;flex-direction:column;gap:clamp(14px,2.4vh,26px)}
+
+  /* 페이지 머리 */
+  .head{display:flex;align-items:flex-end;justify-content:space-between;gap:16px;padding-bottom:clamp(12px,2vh,18px);border-bottom:1px solid var(--line)}
+  .head .tag{font-size:13px;font-weight:700;color:var(--accent);letter-spacing:.04em}
+  .head h1{font-size:clamp(24px,3.4vh,32px);font-weight:800;letter-spacing:-.01em;margin-top:4px}
+  /* 콘텐츠 보기 버튼 */
+  .cta{display:inline-flex;align-items:center;gap:12px;text-decoration:none;cursor:pointer;border:0;font:inherit;
+    background:var(--accent);color:#fff;padding:14px 18px 14px 22px;border-radius:12px;
+    box-shadow:0 6px 18px rgba(31,95,191,.28);transition:.15s;white-space:nowrap}
+  .cta:hover{transform:translateY(-2px);box-shadow:0 10px 24px rgba(31,95,191,.34)}
+  .cta .t{display:flex;flex-direction:column;line-height:1.25;text-align:left}
+  .cta .t b{font-size:17px;font-weight:800}
+  .cta .t small{font-size:12px;opacity:.8;font-weight:500}
+  .cta .arrow{width:34px;height:34px;border-radius:50%;background:rgba(255,255,255,.18);display:flex;align-items:center;justify-content:center;font-size:16px}
+
+  /* 연차 행 */
+  .year{display:grid;grid-template-columns:120px 1fr;gap:clamp(16px,2vw,28px);align-items:start}
+  .ylabel{padding-top:4px}
+  .ylabel .pill{display:inline-block;font-size:14px;font-weight:800;padding:6px 12px;border-radius:999px}
+  .ylabel .yr{display:block;font-size:13px;color:var(--sub);margin-top:8px;padding-left:2px}
+  .ylabel .cnt{display:block;font-size:12px;color:var(--sub);margin-top:2px;padding-left:2px}
+  .y1 .pill{background:var(--y1-soft);color:var(--y1)}
+  .y2 .pill{background:var(--y2);color:#fff}
+
+  .cards{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:clamp(10px,1.1vw,18px)}
+
+  /* 강의 카드 */
+  .card{border:1px solid var(--line);border-radius:12px;overflow:hidden;background:#fff}
+  .thumb{position:relative;aspect-ratio:16/9;background:#dde3ea center/cover no-repeat;width:100%}
+  .thumb.empty{background:linear-gradient(135deg,#e9edf2,#d7dee7);display:flex;align-items:center;justify-content:center;color:#93a0b0;font-size:12px}
+  .thumb.empty::after{content:"강의 썸네일";}
+  .thumb .sem{position:absolute;left:10px;top:10px;font-size:11.5px;font-weight:700;padding:4px 8px;border-radius:6px;
+    background:rgba(255,255,255,.92);color:var(--ink);box-shadow:0 1px 2px rgba(0,0,0,.08)}
+  .y2 .thumb .sem{background:var(--y2);color:#fff}
+  .body{padding:10px 12px 12px}
+  .dept{font-size:12px;font-weight:600;color:var(--sub)}
+  .title{font-size:15px;font-weight:700;margin:3px 0 6px;line-height:1.35;
+    display:-webkit-box;-webkit-line-clamp:2;min-height:2.7em;word-break:keep-all;overflow-wrap:anywhere;-webkit-box-orient:vertical;overflow:hidden}
+  .prof{font-size:13px;color:var(--ink);display:flex;align-items:center;gap:6px}
+  .prof::before{content:"";width:16px;height:16px;border-radius:50%;background:var(--accent-soft);
+    box-shadow:inset 0 0 0 4px var(--accent-soft),inset 0 0 0 8px #c9d8f2}
+
+  .yearsWrap{flex:1;display:flex;flex-direction:column;justify-content:center;gap:clamp(18px,3.4vh,36px);padding-bottom:2vh}
+  .divider{height:1px;background:var(--line);margin-left:calc(120px + clamp(16px,2vw,28px))}
+</style>
+</head>
+<body>
+
+<div class="head">
+  <div>
+    <div class="tag" id="moduleName"></div>
+    <h1>모듈 적용 강의</h1>
+  </div>
+  <a class="cta" id="cta" target="_blank">
+    <span class="t"><b>적용 강의 콘텐츠 보기</b><small id="ctaSub"></small></span>
+    <span class="arrow">▶</span>
+  </a>
+</div>
+
+<main class="yearsWrap"><div id="years"></div></main>
+
+<script>
+/* ======================================================
+   ▼ 이 부분만 고치면 됩니다
+   thumb : 썸네일 이미지 경로 (비우면 회색 자리 표시)
+   ====================================================== */
+const MODULE_NAME = "다각도 관찰(VX) 모듈";
+const CONTENT_LINK = "https://home.iscu.ac.kr/lcms/contents/viewer/previewNew.scu?key=YGBgYGBgYGBgYKmqYnBkYm5yqapqZmhuZmQ=";   // ← 버튼을 누르면 열릴 페이지 경로/주소
+// 1차년도 최대 2개, 2차년도 최대 5개 — sem(학기)을 적으면 썸네일 위에 배지로 표시
+const YEARS = [
+  { label: "2차년도", year: "2026", cls: "y2", lectures: [
+    { thumb: "thumbs/p15L.jpg", dept: "뷰티디자인학과", title: "임상기초메이크업", prof: "이해미루", sem: "" },
+    { thumb: "thumbs/p15R.jpg", dept: "스포츠지도학과", title: "골프 트레이닝", prof: "우주연·윤영주", sem: "" },
+    { thumb: "thumbs/p16L.jpg", dept: "모델연기학과", title: "드라마 대사로 배우는 기초연기", prof: "반민정", sem: "" },
+  ]},
+  { label: "1차년도", year: "2025", cls: "y1", lectures: [
+    { thumb: "thumbs/p14L.jpg", dept: "교양학과", title: "나에게 찾아온 발레", prof: "김주원", sem: "" },
+  ]},
+];
+/* ====================================================== */
+
+document.getElementById("moduleName").textContent = MODULE_NAME;
+const total = YEARS.reduce((a, y) => a + y.lectures.length, 0);
+document.getElementById("ctaSub").textContent = `1·2차년도 ${total}개 강좌를 한 번에`;
+const cta = document.getElementById("cta");
+if (CONTENT_LINK) { cta.href = CONTENT_LINK; cta.target = "_blank"; cta.rel = "noopener"; }
+document.getElementById("years").outerHTML = YEARS.map((y, k) => `
+  ${k ? '<div class="divider"></div>' : ''}
+  <section class="year ${y.cls}">
+    <div class="ylabel"><span class="pill">${y.label}</span><span class="yr">${y.year}년</span><span class="cnt">${y.lectures.length}개 강좌</span></div>
+    <div class="cards">
+      ${y.lectures.map(l => `
+        <article class="card">
+          <div class="thumb ${l.thumb ? '' : 'empty'}" ${l.thumb ? `style="background-image:url('${l.thumb}')"` : ''}>${l.sem ? `<span class="sem">${l.sem}</span>` : ""}</div>
+          <div class="body">
+            <div class="dept">${l.dept}</div>
+            <div class="title">${l.title}</div>
+            <div class="prof">${l.prof} 교수</div>
+          </div>
+        </article>`).join("")}
+    </div>
+  </section>`).join("");
+</script>
+</body>
+</html>

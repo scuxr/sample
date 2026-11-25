@@ -1,0 +1,1 @@
+[["wait",800],["eval","JSON.stringify({w:innerWidth,h:innerHeight,plate:document.querySelector('.iso-plate').getBoundingClientRect(),svg:document.querySelector('.iso-svg').getBoundingClientRect(),page:getComputedStyle(document.querySelector('.iso-page')).width})"]]

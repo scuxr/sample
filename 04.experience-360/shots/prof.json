@@ -1,0 +1,6 @@
+[["wait",1500],
+["eval","new Promise(r=>{let n=0;const t0=performance.now();function f(){n++; if(performance.now()-t0<2000) requestAnimationFrame(f); else r('base '+n/2);} requestAnimationFrame(f);})"],
+["eval","document.querySelectorAll('[data-strip]').forEach(e=>e.style.display='none'); 'strips off'"],
+["eval","new Promise(r=>{let n=0;const t0=performance.now();function f(){n++; if(performance.now()-t0<2000) requestAnimationFrame(f); else r('nostrip '+n/2);} requestAnimationFrame(f);})"],
+["eval","document.querySelectorAll('.iso-halo').forEach(e=>e.style.display='none'); 'halos off'"],
+["eval","new Promise(r=>{let n=0;const t0=performance.now();function f(){n++; if(performance.now()-t0<2000) requestAnimationFrame(f); else r('nohalo '+n/2);} requestAnimationFrame(f);})"]]
