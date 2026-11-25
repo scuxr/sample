@@ -1,0 +1,1 @@
+[["wait",800],["key","2"],["eval","document.querySelector('[data-readout]').textContent"],["wait",500],["eval","document.querySelector('[data-readout]').textContent"],["wait",1000],["eval","document.querySelector('[data-readout]').textContent"],["wait",1000],["eval","document.querySelector('[data-readout]').textContent"]]
