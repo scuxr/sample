@@ -183,8 +183,8 @@ function homeDemo(){
   border-radius:12px;background:#fff;cursor:pointer;font:inherit;text-align:left;transition:.15s}
   button:hover{border-color:${ac};transform:translateY(-2px);box-shadow:0 8px 20px rgba(0,0,0,.06)}
   button b{font-size:11px;color:${ac}}button span{font-size:14px;font-weight:700;color:#1b1f24}</style></head>
-  <body><div class="k">AID PROJECT · XR CONTENTS</div><h1>모듈별 XR 콘텐츠 소개</h1>
-  <p>7개 XR 모듈의 구현원리 · 적용 강의</p><div class="grid">${cards}</div></body></html>`;
+  <body><div class="k">사이버대학 디지털 교육환경 고도화 지원사업</div><h1>모듈별 XR 콘텐츠 소개</h1>
+  <p>서울사이버대학 7개 XR 모듈의 구현원리와 적용 강의</p><div class="grid">${cards}</div></body></html>`;
 }
 window.addEventListener("message", e => {
   if (e.data && typeof e.data.goSection === "number") go(flat.findIndex(p => p.si === e.data.goSection));
